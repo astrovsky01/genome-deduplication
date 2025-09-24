@@ -38,6 +38,8 @@
 import argparse
 import Bio
 from Bio import SeqIO
+import pickle
+import os
 
 parser = argparse.ArgumentParser()
 parser.add_argument("fasta", help="Input FASTA file")
@@ -47,6 +49,7 @@ parser.add_argument("--min_sample_len", type=int, default=50, help="Minimum samp
 args = parser.parse_args()
 
 fasta = args.fasta
+file_basename = os.path.splitext(file_basename)[0]
 k = args.k
 sample_len = args.sample_len
 min_sample_len = args.min_sample_len
@@ -153,20 +156,51 @@ def deduplicate(seq, k, sample_len, seen_kmers=None, min_sample_len=None):
 
     return sample_regions, masked_starts, skipped_regions, seen_kmers
 
-#sequence = "AAACCCAACACCGGGGGGTGTGTGAAA"
-#sequence = "AAACCCAACACC"
-#sequence = "AAACCCAAACCC"
-sequence = "AAANAAACCCAACACCNGGGGGNT"
-k = 3
-sample_len = 4
+# #sequence = "AAACCCAACACCGGGGGGTGTGTGAAA"
+# #sequence = "AAACCCAACACC"
+# #sequence = "AAACCCAAACCC"
+# sequence = "AAANAAACCCAACACCNGGGGGNT"
+# k = 3
+# sample_len = 4
+
+def writeout_bed(name, regions, bedfile):
+    with open(bedfile, 'w') as f:
+        if len(regions[0]) == 2:
+            for start, end in regions:
+                f.write(f"{name}\t{start}\t{end}\n")
+        else:
+            for start in regions:
+                f.write(f"{name}\t{start}\n")
+
+def writeout_kmers(seen_kmer_set, outfile):
+    with open(outfile, 'w') as f:
+        pickle.dump(seen_kmer_set, f)
 
 with open(fasta, 'r') as f:
     seen_kmers = set()
+    local_dict = {}
     for record in SeqIO.parse(f, "fasta"):
         sequence = str(record.seq)
+        seqname = record.id
         sample_regions, masked_starts, skipped_regions, seen_kmers = deduplicate(sequence, k, sample_len, seen_kmers=seen_kmers)
+
         print(f"Sample regions: {sample_regions}")
         print(f"Masked starts: {masked_starts}")
         print(f"Skipped regions: {skipped_regions}")
+
+        # Keep dict associating the regions with the sequence name
+        local_dict[seqname] = {
+            "sample_regions": sample_regions,
+            "masked_starts": masked_starts,
+            "skipped_regions": skipped_regions,
+        }
         print(f"Seen kmers: {seen_kmers}")
+with open(file_basename + "sample_regious.bed"):
+    with open(file_basename + "masked_starts.bed"):
+        with open(file_basename + "skipped_regions.bed"):
+            for seqname in local_dict.keys():
+                writeout_bed(seqname, local_dict[seqname]["sample_regions"], file_basename + "sample_regions.bed")
+                writeout_bed(seqname, local_dict[seqname]["masked_starts"], file_basename + "masked_starts.bed")
+                writeout_bed(seqname, local_dict[seqname]["skipped_regions"], file_basename + "skipped_regions.bed")
+writeout_kmers(seen_kmers, file_basename + f".pickle")
 
