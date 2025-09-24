@@ -34,10 +34,27 @@
 # sample_regions are inclusive at the start, exclusive at the end
 # masked_starts are the start coordinates of the masked kmers
 # skipped_regions are inclusive at the start, exclusive at the end
+
+import argparse
+import Bio
+from Bio import SeqIO
+
+parser = argparse.ArgumentParser()
+parser.add_argument("fasta", help="Input FASTA file")
+parser.add_argument("--k", type=int, default=32, help="Kmer size (default: 32)")
+parser.add_argument("--sample_len", type=int, default=1000, help="Sample length (default: 1000)")
+parser.add_argument("--min_sample_len", type=int, default=50, help="Minimum sample length (default: 50)")
+args = parser.parse_args()
+
+fasta = args.fasta
+k = args.k
+sample_len = args.sample_len
+min_sample_len = args.min_sample_len
+
 def deduplicate(seq, k, sample_len, seen_kmers=None, min_sample_len=None):
 
     # Check validity of inputs
-    if k > sample_len:
+    if k < sample_len:
         raise("Error: sample length cannot be greater than k.")
     if min_sample_len is not None and len(seq) < min_sample_len:
         raise("Error: the sequence length is less than min_sample_len.")
@@ -143,10 +160,13 @@ sequence = "AAANAAACCCAACACCNGGGGGNT"
 k = 3
 sample_len = 4
 
-sample_regions, masked_starts, skipped_regions, seen_kmers = deduplicate(sequence, k, sample_len)
-
-print(f"Sample regions: {sample_regions}")
-print(f"Masked starts: {masked_starts}")
-print(f"Skipped regions: {skipped_regions}")
-print(f"Seen kmers: {seen_kmers}")
+with open(fasta, 'r') as f:
+    seen_kmers = set()
+    for record in SeqIO.parse(f, "fasta"):
+        sequence = str(record.seq)
+        sample_regions, masked_starts, skipped_regions, seen_kmers = deduplicate(sequence, k, sample_len, seen_kmers=seen_kmers)
+        print(f"Sample regions: {sample_regions}")
+        print(f"Masked starts: {masked_starts}")
+        print(f"Skipped regions: {skipped_regions}")
+        print(f"Seen kmers: {seen_kmers}")
 
