@@ -41,18 +41,78 @@ from Bio import SeqIO
 import pickle
 import os
 
+
+## Variable setting ================
 parser = argparse.ArgumentParser()
 parser.add_argument("fasta", help="Input FASTA file")
 parser.add_argument("--k", type=int, default=32, help="Kmer size (default: 32)")
 parser.add_argument("--sample_len", type=int, default=1000, help="Sample length (default: 1000)")
 parser.add_argument("--min_sample_len", type=int, default=50, help="Minimum sample length (default: 50)")
+parser.add_argument("--seen_kmers", default=None, help="Pickle file containing seen kmers (default: None)")
 args = parser.parse_args()
 
 fasta = args.fasta
-file_basename = os.path.splitext(file_basename)[0]
+file_basename = os.path.splitext(os.path.basename(fasta))[0]
 k = args.k
 sample_len = args.sample_len
 min_sample_len = args.min_sample_len
+if args.seen_kmers is not None:
+    seen_kmers = pickle.load(open(args.seen_kmers, "rb"))
+else:
+    seen_kmers = None
+
+local_dict = {}
+
+# =====================================
+## Component functions ================
+
+def n_check(seq, sample_start, sample_end, skipped_regions):
+    "Skip over regions with N"
+        gap_index = seq[sample_start:sample_end].find('N')        
+        if gap_index > -1:
+            sample_end = sample_start + gap_index + 1
+            skipped_regions.append((sample_start, sample_end))
+            sample_start = sample_end
+            return(skipped_regions, sample_start)
+
+# =====================================
+## Output Functions ================
+
+def writeout_bed(name, regions, bedfile):
+    """
+    Create bed files for regions or just a list of start sites for beginning positions
+    """
+    with open(bedfile, 'w') as f:
+        if len(regions[0]) == 2:
+            for start, end in regions:
+                f.write(f"{name}\t{start}\t{end}\n")
+        else:
+            for start in regions:
+                f.write(f"{name}\t{start}\n")
+
+def writeout_kmers(seen_kmer_set, outfile):
+    """
+    Dump seen kmers into a pickle file that can be used as input for next dedup file
+    """
+    with open(outfile, 'w') as f:
+        pickle.dump(seen_kmer_set, f)
+
+def output_dump(local_dict, file_basename):
+    """
+    Output all bed files
+    """
+    with open(file_basename + "_sample_regions.bed", 'w') as sample_regions:
+        with open(file_basename + "_masked_starts.bed", 'w') as masked_starts:
+            with open(file_basename + "_skipped_regions.bed", 'w') as skipped_regions:
+                for seqname in local_dict.keys():
+                    writeout_bed(seqname, local_dict[seqname]["sample_regions"], sample_regions)
+                    writeout_bed(seqname, local_dict[seqname]["masked_starts"], masked_starts)
+                    writeout_bed(seqname, local_dict[seqname]["skipped_regions"], skipped_regions)
+# =====================================
+## Main Deduplication ================
+
+# =====================================
+
 
 def deduplicate(seq, k, sample_len, seen_kmers=None, min_sample_len=None):
 
@@ -95,12 +155,13 @@ def deduplicate(seq, k, sample_len, seen_kmers=None, min_sample_len=None):
 
         # Early exit if N is in this possible sample
         # Although code-wise, don't say exited_early
-        gap_index = seq[sample_start:sample_end].find('N')        
-        if gap_index > -1:
-            sample_end = sample_start + gap_index + 1
-            skipped_regions.append((sample_start, sample_end))
-            sample_start = sample_end
-            continue
+        # gap_index = seq[sample_start:sample_end].find('N')        
+        # if gap_index > -1:
+        #     sample_end = sample_start + gap_index + 1
+        #     skipped_regions.append((sample_start, sample_end))
+        #     sample_start = sample_end
+        #     continue
+        skipped_regions, sample_start = n_check(seq, sample_start, sample_end, skipped_regions)
 
         # Loop through all kmers in this possible sample
         for kmer_start_idx in range(sample_start, sample_end-k+1):
@@ -163,22 +224,12 @@ def deduplicate(seq, k, sample_len, seen_kmers=None, min_sample_len=None):
 # k = 3
 # sample_len = 4
 
-def writeout_bed(name, regions, bedfile):
-    with open(bedfile, 'w') as f:
-        if len(regions[0]) == 2:
-            for start, end in regions:
-                f.write(f"{name}\t{start}\t{end}\n")
-        else:
-            for start in regions:
-                f.write(f"{name}\t{start}\n")
 
-def writeout_kmers(seen_kmer_set, outfile):
-    with open(outfile, 'w') as f:
-        pickle.dump(seen_kmer_set, f)
+
+
+
 
 with open(fasta, 'r') as f:
-    seen_kmers = set()
-    local_dict = {}
     for record in SeqIO.parse(f, "fasta"):
         sequence = str(record.seq)
         seqname = record.id
@@ -195,12 +246,6 @@ with open(fasta, 'r') as f:
             "skipped_regions": skipped_regions,
         }
         print(f"Seen kmers: {seen_kmers}")
-with open(file_basename + "sample_regious.bed"):
-    with open(file_basename + "masked_starts.bed"):
-        with open(file_basename + "skipped_regions.bed"):
-            for seqname in local_dict.keys():
-                writeout_bed(seqname, local_dict[seqname]["sample_regions"], file_basename + "sample_regions.bed")
-                writeout_bed(seqname, local_dict[seqname]["masked_starts"], file_basename + "masked_starts.bed")
-                writeout_bed(seqname, local_dict[seqname]["skipped_regions"], file_basename + "skipped_regions.bed")
+    output_dump(local_dict, file_basename)
 writeout_kmers(seen_kmers, file_basename + f".pickle")
 
