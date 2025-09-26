@@ -31,10 +31,33 @@
 ###        Jump ahead to next possible sample, TTAA
 ### The entirety of the input should fall into 1 of the 3 categories
 
+import random
+
+# Convert kmer to int
+# Only works up to 32-mers (can be encoded in 64 bits if only A/C/G/T bases)
+def encode_kmer(kmer):
+    char_map = {'A':0, 'C':1, 'G':2, 'T':3}
+    kmer_num = 0
+    for c in kmer:
+        kmer_num = (kmer_num << 2) | char_map[c]
+    return kmer_num
+
+# Not necessarily used, but good for testing
+def decode_kmer(kmer_num, k=32):
+    char_map = {0:'A', 1:'C', 2:'G', 3:'T'}
+    kmer = []
+    for i in range(k):
+        nucleotide_code = kmer_num & 3 # 0x11
+        kmer.append(char_map[nucleotide_code])
+        kmer_num >>= 2
+    return ''.join(reversed(kmer))
+
 # sample_regions are inclusive at the start, exclusive at the end
 # masked_starts are the start coordinates of the masked kmers
 # skipped_regions are inclusive at the start, exclusive at the end
-def deduplicate(seq, k, sample_len, seen_kmers=None, min_sample_len=None):
+def deduplicate(seq, k, sample_len, allowed_duplicate_rate=0.0, seen_kmers=None, min_sample_len=None, seed=123):
+
+    rng = random.Random(seed)
 
     # Check validity of inputs
     if k > sample_len:
@@ -85,17 +108,20 @@ def deduplicate(seq, k, sample_len, seen_kmers=None, min_sample_len=None):
         # Loop through all kmers in this possible sample
         for kmer_start_idx in range(sample_start, sample_end-k+1):
 
-            # Get kmer
+            # Get kmer and its encoding for storage
             kmer = seq[kmer_start_idx:kmer_start_idx+k]
+            kmer_num = encode_kmer(kmer)
 
             # If we haven't seen this kmer before, record it in the sample kmers
-            if kmer not in seen_kmers and kmer not in sample_seen_kmers:
-                sample_seen_kmers.add(kmer) # TODO: should encode kmers
+            if kmer_num not in seen_kmers and kmer_num not in sample_seen_kmers:
+                sample_seen_kmers.add(kmer_num)
 
             # If we've seen this kmer before, stop analyzing this sample
             else:
 
-                # TODO: Could add stochasticity here; if random() < dedup_pct; continue
+                # Stochasticity is built in here here; if random() < allowed duplicate rate, let through this duplicate
+                if rng.random() < allowed_duplicate_rate:
+                    continue
                 
                 # Handle finding a repeat
                 masked_starts.append(kmer_start_idx)
@@ -114,7 +140,7 @@ def deduplicate(seq, k, sample_len, seen_kmers=None, min_sample_len=None):
             # Record sample indices
             sample_regions.append((sample_start, sample_end_idx))
 
-            # TODO: add ignored kmers at the edges of samples
+            # TODO: add ignored kmers at the edges of samples?
 
         # If not a valid sample, record skipped region
         else:
@@ -135,6 +161,12 @@ def deduplicate(seq, k, sample_len, seen_kmers=None, min_sample_len=None):
         skipped_regions.append((sample_start, len(seq)))
 
     return sample_regions, masked_starts, skipped_regions, seen_kmers
+
+# Test encoder/decoder
+kmers = ["GATTACA", "GATTACAT", "TCCATGGAC"]
+for kmer in kmers:
+    print(f"kmer = {kmer}; encoded kmer = {encode_kmer(kmer)}; decoded kmer = {decode_kmer(encode_kmer(kmer), len(kmer))}")
+exit()
 
 #sequence = "AAACCCAACACCGGGGGGTGTGTGAAA"
 #sequence = "AAACCCAACACC"
