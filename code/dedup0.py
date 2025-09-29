@@ -35,6 +35,9 @@
 # masked_starts are the start coordinates of the masked kmers
 # skipped_regions are inclusive at the start, exclusive at the end
 
+###=============================================================================
+### Imports
+
 import argparse
 import Bio
 from Bio import SeqIO
@@ -43,41 +46,10 @@ import os
 import random
 
 
-## Variable setting ================
-parser = argparse.ArgumentParser()
-parser.add_argument("fasta", help="Input FASTA file")
-parser.add_argument("-k". "--kmer", type=int, default=32, help="Kmer size (default: 32)")
-parser.add_argument("-l", "--sample_len", type=int, default=1000, help="Sample length (default: 1000)")
-parser.add_argument("-m", "--min_sample_len", type=int, default=50, help="Minimum sample length (default: 50)")
-parser.add_argument("-p", "--seen_kmers", default=None, help="Pickle file containing seen kmers (default: None)")
-parser.add_argument("-r", "--retain", type=float, default=0.0, help="Likelihood a duplicate kmer will be allowed through as a value from [0,1]")
-parser.add_argument("-seed", "--seed", type=int, default=123, help="Random seed for reproducibility")
+###=============================================================================
+### Helper functions
 
-
-args = parser.parse_args()
-
-fasta = args.fasta
-file_basename = os.path.splitext(os.path.basename(fasta))[0]
-k = args.k
-sample_len = args.sample_len
-min_sample_len = args.min_sample_len
-seed = args.seed
-rng=random.Random(seed)
-if args.seen_kmers is not None:
-    seen_kmers = pickle.load(open(args.seen_kmers, "rb"))
-else:
-    seen_kmers = None
-if args.retain is not None:
-    if args.stochastic_retention > 1.0 or args.retain < 0.0:
-        raise("Error: Retention rate of duplicate kmers cannot be greater than 1.0 or less than 0.0")
-    else:
-        retain = args.retain
-local_dict = {}
-
-# =====================================
-
-
-## Component functions ================
+## Component Functions ================
 
 def encode_kmer(kmer):
     char_map = {'A':0, 'C':1, 'G':2, 'T':3}
@@ -124,9 +96,6 @@ def sample_scan(seq, start, end, k, seen_kmers, sample_seen_kmers, masked_starts
                 return sample_seen_kmers, masked_starts, True, kmer_start_idx
     return sample_seen_kmers, masked_starts, False, end
 
-# =====================================
-
-
 ## Output Functions ================
 
 def writeout_bed(name, regions, bedfile):
@@ -159,8 +128,46 @@ def output_dump(local_dict, file_basename):
                     writeout_bed(seqname, local_dict[seqname]["sample_regions"], sample_regions)
                     writeout_bed(seqname, local_dict[seqname]["masked_starts"], masked_starts)
                     writeout_bed(seqname, local_dict[seqname]["skipped_regions"], skipped_regions)
-# =====================================
 
+## Testing Functions ================
+
+def test_with_fasta(fasta, k, sample_len, seen_kmers):
+    with open(fasta, 'r') as f:
+        for record in SeqIO.parse(f, "fasta"):
+            sequence = str(record.seq)
+            seqname = record.id
+            sample_regions, masked_starts, skipped_regions, seen_kmers = deduplicate(sequence, k, sample_len, seen_kmers=seen_kmers)
+
+
+            print(f"Sample regions: {sample_regions}")
+            print(f"Masked starts: {masked_starts}")
+            print(f"Skipped regions: {skipped_regions}")
+
+            # Keep dict associating the regions with the sequence name
+            local_dict[seqname] = {
+                "sample_regions": sample_regions,
+                "masked_starts": masked_starts,
+                "skipped_regions": skipped_regions,
+            }
+            print(f"Seen kmers: {seen_kmers}")
+
+        output_dump(local_dict, file_basename)
+
+    writeout_kmers(seen_kmers, file_basename + f".pickle")
+
+    print(f"Done with {fasta}")
+
+
+def test_with_sequence(sequence, k, sample_len, seen_kmers):
+    sample_regions, masked_starts, skipped_regions, seen_kmers = deduplicate(sequence, k, sample_len, seen_kmers=seen_kmers)
+    print(sample_regions)
+    print(masked_starts)
+    print(skipped_regions)
+    print(seen_kmers)
+
+
+###=============================================================================
+### Main functions
 
 ## Main Deduplication ================
 def deduplicate(seq, k, sample_len, seen_kmers=None, min_sample_len=None):
@@ -266,39 +273,45 @@ def deduplicate(seq, k, sample_len, seen_kmers=None, min_sample_len=None):
         skipped_regions.append((sample_start, len(seq)))
 
     return sample_regions, masked_starts, skipped_regions, seen_kmers
-# =====================================
-
-with open(fasta, 'r') as f:
-    for record in SeqIO.parse(f, "fasta"):
-        sequence = str(record.seq)
-        seqname = record.id
-        sample_regions, masked_starts, skipped_regions, seen_kmers = deduplicate(sequence, k, sample_len, seen_kmers=seen_kmers)
 
 
-        print(f"Sample regions: {sample_regions}")
-        print(f"Masked starts: {masked_starts}")
-        print(f"Skipped regions: {skipped_regions}")
+###=============================================================================
+### Call to main
 
-        # Keep dict associating the regions with the sequence name
-        local_dict[seqname] = {
-            "sample_regions": sample_regions,
-            "masked_starts": masked_starts,
-            "skipped_regions": skipped_regions,
-        }
-        print(f"Seen kmers: {seen_kmers}")
-    output_dump(local_dict, file_basename)
-writeout_kmers(seen_kmers, file_basename + f".pickle")
+def __main__():
+
+    ## Collect input args
+    parser = argparse.ArgumentParser()
+    parser.add_argument("fasta", help="Input FASTA file")
+    parser.add_argument("-k". "--kmer", type=int, default=32, help="Kmer size (default: 32)")
+    parser.add_argument("-l", "--sample_len", type=int, default=1000, help="Sample length (default: 1000)")
+    parser.add_argument("-m", "--min_sample_len", type=int, default=50, help="Minimum sample length (default: 50)")
+    parser.add_argument("-p", "--seen_kmers", default=None, help="Pickle file containing seen kmers (default: None)")
+    parser.add_argument("-r", "--retain", type=float, default=0.0, help="Likelihood a duplicate kmer will be allowed through as a value from [0,1]")
+    parser.add_argument("-seed", "--seed", type=int, default=123, help="Random seed for reproducibility")
+    args = parser.parse_args()
+
+    ## Process input args, checking for validity
+    fasta = args.fasta
+    input_basename = os.path.splitext(os.path.basename(fasta))[0]
+    k = args.k
+    sample_len = args.sample_len
+    min_sample_len = args.min_sample_len
+    seed = args.seed
+    rng = random.Random(seed)
+    if args.seen_kmers is not None:
+        seen_kmers = set(pickle.load(open(args.seen_kmers, "rb")))
+    else:
+        seen_kmers = set()
+    retain = args.retain
+    if retain is not None:
+        if retain > 1.0 or retain < 0.0:
+            raise("Error: Retention rate of duplicate kmers cannot be greater than 1.0 or less than 0.0")
+
+    ## Run deduplication
+    deduplicate()
 
 
-# Test encoder/decoder
-kmers = ["GATTACA", "GATTACAT", "TCCATGGAC"]
-for kmer in kmers:
-    print(f"kmer = {kmer}; encoded kmer = {encode_kmer(kmer)}; decoded kmer = {decode_kmer(encode_kmer(kmer), len(kmer))}")
-exit()
+if __name__ == "__main__":
+    __main__()
 
-#sequence = "AAACCCAACACCGGGGGGTGTGTGAAA"
-#sequence = "AAACCCAACACC"
-#sequence = "AAACCCAAACCC"
-sequence = "AAANAAACCCAACACCNGGGGGNT"
-k = 3
-sample_len = 4
