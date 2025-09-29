@@ -31,10 +31,54 @@
 ###        Jump ahead to next possible sample, TTAA
 ### The entirety of the input should fall into 1 of the 3 categories
 
+# sample_regions are inclusive at the start, exclusive at the end
+# masked_starts are the start coordinates of the masked kmers
+# skipped_regions are inclusive at the start, exclusive at the end
+
+import argparse
+import Bio
+from Bio import SeqIO
+import pickle
+import os
 import random
 
-# Convert kmer to int
-# Only works up to 32-mers (can be encoded in 64 bits if only A/C/G/T bases)
+
+## Variable setting ================
+parser = argparse.ArgumentParser()
+parser.add_argument("fasta", help="Input FASTA file")
+parser.add_argument("-k". "--kmer", type=int, default=32, help="Kmer size (default: 32)")
+parser.add_argument("-l", "--sample_len", type=int, default=1000, help="Sample length (default: 1000)")
+parser.add_argument("-m", "--min_sample_len", type=int, default=50, help="Minimum sample length (default: 50)")
+parser.add_argument("-p", "--seen_kmers", default=None, help="Pickle file containing seen kmers (default: None)")
+parser.add_argument("-r", "--retain", type=float, default=0.0, help="Likelihood a duplicate kmer will be allowed through as a value from [0,1]")
+parser.add_argument("-seed", "--seed", type=int, default=123, help="Random seed for reproducibility")
+
+
+args = parser.parse_args()
+
+fasta = args.fasta
+file_basename = os.path.splitext(os.path.basename(fasta))[0]
+k = args.k
+sample_len = args.sample_len
+min_sample_len = args.min_sample_len
+seed = args.seed
+rng=random.Random(seed)
+if args.seen_kmers is not None:
+    seen_kmers = pickle.load(open(args.seen_kmers, "rb"))
+else:
+    seen_kmers = None
+if args.retain is not None:
+    if args.stochastic_retention > 1.0 or args.retain < 0.0:
+        raise("Error: Retention rate of duplicate kmers cannot be greater than 1.0 or less than 0.0")
+    else:
+        retain = args.retain
+local_dict = {}
+
+# =====================================
+
+
+## Component functions ================
+
 def encode_kmer(kmer):
     char_map = {'A':0, 'C':1, 'G':2, 'T':3}
     kmer_num = 0
@@ -42,7 +86,6 @@ def encode_kmer(kmer):
         kmer_num = (kmer_num << 2) | char_map[c]
     return kmer_num
 
-# Not necessarily used, but good for testing
 def decode_kmer(kmer_num, k=32):
     char_map = {0:'A', 1:'C', 2:'G', 3:'T'}
     kmer = []
@@ -52,15 +95,78 @@ def decode_kmer(kmer_num, k=32):
         kmer_num >>= 2
     return ''.join(reversed(kmer))
 
-# sample_regions are inclusive at the start, exclusive at the end
-# masked_starts are the start coordinates of the masked kmers
-# skipped_regions are inclusive at the start, exclusive at the end
-def deduplicate(seq, k, sample_len, allowed_duplicate_rate=0.0, seen_kmers=None, min_sample_len=None, seed=123):
+def n_check(seq, sample_start, sample_end, skipped_regions):
+    "Skip over regions with N"
+    gap_index = seq[sample_start:sample_end].find('N')        
+    if gap_index > -1:
+        sample_end = sample_start + gap_index + 1
+        skipped_regions.append((sample_start, sample_end))
+        sample_start = sample_end
+    return(skipped_regions, sample_start, sample_end)
 
-    rng = random.Random(seed)
+def sample_scan(seq, start, end, k, seen_kmers, sample_seen_kmers, masked_starts, dedup_retain=globals()["retain"]):
+    """Scan a sample for kmers. If a duplicate is found either within the same set or globally, 
+    return the index of the start of the duplicate kmer. If no duplicate is found, """
+    for kmer_start_idx in range(start, end-k+1):
+
+        # Get encoded kmer
+        kmer = encode_kmer(seq[kmer_start_idx:kmer_start_idx+k])
+
+        # If we haven't seen this kmer in this sample before, record it in the sample kmers
+        if kmer not in seen_kmers and kmer not in sample_seen_kmers:
+            sample_seen_kmers.add(kmer)
+        # If we've seen this kmer before, stop analyzing this sample unless it passes random check
+        else:
+            if rng.random() > dedup_retain:
+                continue
+            else:
+                # Handle finding a repeat
+                return sample_seen_kmers, masked_starts, True, kmer_start_idx
+    return sample_seen_kmers, masked_starts, False, end
+
+# =====================================
+
+
+## Output Functions ================
+
+def writeout_bed(name, regions, bedfile):
+    """
+    Create bed files for regions or just a list of start sites for beginning positions
+    """
+    with open(bedfile, 'w') as f:
+        if len(regions[0]) == 2:
+            for start, end in regions:
+                f.write(f"{name}\t{start}\t{end}\n")
+        else:
+            for start in regions:
+                f.write(f"{name}\t{start}\n")
+
+def writeout_kmers(seen_kmer_set, outfile):
+    """
+    Dump seen kmers into a pickle file that can be used as input for next dedup file
+    """
+    with open(outfile, 'w') as f:
+        pickle.dump(seen_kmer_set, f)
+
+def output_dump(local_dict, file_basename):
+    """
+    Output all bed files
+    """
+    with open(file_basename + "_sample_regions.bed", 'w') as sample_regions:
+        with open(file_basename + "_masked_starts.bed", 'w') as masked_starts:
+            with open(file_basename + "_skipped_regions.bed", 'w') as skipped_regions:
+                for seqname in local_dict.keys():
+                    writeout_bed(seqname, local_dict[seqname]["sample_regions"], sample_regions)
+                    writeout_bed(seqname, local_dict[seqname]["masked_starts"], masked_starts)
+                    writeout_bed(seqname, local_dict[seqname]["skipped_regions"], skipped_regions)
+# =====================================
+
+
+## Main Deduplication ================
+def deduplicate(seq, k, sample_len, seen_kmers=None, min_sample_len=None):
 
     # Check validity of inputs
-    if k > sample_len:
+    if k < sample_len:
         raise("Error: sample length cannot be greater than k.")
     if min_sample_len is not None and len(seq) < min_sample_len:
         raise("Error: the sequence length is less than min_sample_len.")
@@ -98,36 +204,35 @@ def deduplicate(seq, k, sample_len, allowed_duplicate_rate=0.0, seen_kmers=None,
 
         # Early exit if N is in this possible sample
         # Although code-wise, don't say exited_early
-        gap_index = seq[sample_start:sample_end].find('N')        
-        if gap_index > -1:
-            sample_end = sample_start + gap_index + 1
-            skipped_regions.append((sample_start, sample_end))
-            sample_start = sample_end
-            continue
+        # gap_index = seq[sample_start:sample_end].find('N')        
+        # if gap_index > -1:
+        #     sample_end = sample_start + gap_index + 1
+        #     skipped_regions.append((sample_start, sample_end))
+        #     sample_start = sample_end
+        #     continue
+        skipped_regions, sample_start, sample_end = n_check(seq, sample_start, sample_end, skipped_regions)
 
         # Loop through all kmers in this possible sample
-        for kmer_start_idx in range(sample_start, sample_end-k+1):
+        # for kmer_start_idx in range(sample_start, sample_end-k+1):
 
-            # Get kmer and its encoding for storage
-            kmer = seq[kmer_start_idx:kmer_start_idx+k]
-            kmer_num = encode_kmer(kmer)
+        #     # Get kmer
+        #     kmer = seq[kmer_start_idx:kmer_start_idx+k]
 
-            # If we haven't seen this kmer before, record it in the sample kmers
-            if kmer_num not in seen_kmers and kmer_num not in sample_seen_kmers:
-                sample_seen_kmers.add(kmer_num)
+        #     # If we haven't seen this kmer before, record it in the sample kmers
+        #     if kmer not in seen_kmers and kmer not in sample_seen_kmers:
+        #         sample_seen_kmers.add(kmer) # TODO: should encode kmers
 
-            # If we've seen this kmer before, stop analyzing this sample
-            else:
+        #     # If we've seen this kmer before, stop analyzing this sample
+        #     else:
 
-                # Stochasticity is built in here here; if random() < allowed duplicate rate, let through this duplicate
-                if rng.random() < allowed_duplicate_rate:
-                    continue
+        #         # TODO: Could add stochasticity here; if random() < dedup_pct; continue
                 
-                # Handle finding a repeat
-                masked_starts.append(kmer_start_idx)
-                sample_end = kmer_start_idx
-                exited_early = True
-                break
+        #         # Handle finding a repeat
+        #         masked_starts.append(kmer_start_idx)
+        #         sample_end = kmer_start_idx
+        #         exited_early = True
+        #         break
+        sample_seen_kmers, masked_starts, exited_early, sample_end = sample_scan(seq, sample_start, sample_end, k, seen_kmers, sample_seen_kmers, masked_starts)
        
         # Check if we found a valid sample (didn't exit too early)
         # If exited early, sample_end is sample_end + k - 1
@@ -161,6 +266,29 @@ def deduplicate(seq, k, sample_len, allowed_duplicate_rate=0.0, seen_kmers=None,
         skipped_regions.append((sample_start, len(seq)))
 
     return sample_regions, masked_starts, skipped_regions, seen_kmers
+# =====================================
+
+with open(fasta, 'r') as f:
+    for record in SeqIO.parse(f, "fasta"):
+        sequence = str(record.seq)
+        seqname = record.id
+        sample_regions, masked_starts, skipped_regions, seen_kmers = deduplicate(sequence, k, sample_len, seen_kmers=seen_kmers)
+
+
+        print(f"Sample regions: {sample_regions}")
+        print(f"Masked starts: {masked_starts}")
+        print(f"Skipped regions: {skipped_regions}")
+
+        # Keep dict associating the regions with the sequence name
+        local_dict[seqname] = {
+            "sample_regions": sample_regions,
+            "masked_starts": masked_starts,
+            "skipped_regions": skipped_regions,
+        }
+        print(f"Seen kmers: {seen_kmers}")
+    output_dump(local_dict, file_basename)
+writeout_kmers(seen_kmers, file_basename + f".pickle")
+
 
 # Test encoder/decoder
 kmers = ["GATTACA", "GATTACAT", "TCCATGGAC"]
@@ -174,11 +302,3 @@ exit()
 sequence = "AAANAAACCCAACACCNGGGGGNT"
 k = 3
 sample_len = 4
-
-sample_regions, masked_starts, skipped_regions, seen_kmers = deduplicate(sequence, k, sample_len)
-
-print(f"Sample regions: {sample_regions}")
-print(f"Masked starts: {masked_starts}")
-print(f"Skipped regions: {skipped_regions}")
-print(f"Seen kmers: {seen_kmers}")
-
