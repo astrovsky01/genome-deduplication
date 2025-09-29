@@ -47,10 +47,12 @@ import random
 parser = argparse.ArgumentParser()
 parser.add_argument("fasta", help="Input FASTA file")
 parser.add_argument("-k". "--kmer", type=int, default=32, help="Kmer size (default: 32)")
-parser.add_argument("-s", "--sample_len", type=int, default=1000, help="Sample length (default: 1000)")
+parser.add_argument("-l", "--sample_len", type=int, default=1000, help="Sample length (default: 1000)")
 parser.add_argument("-m", "--min_sample_len", type=int, default=50, help="Minimum sample length (default: 50)")
 parser.add_argument("-p", "--seen_kmers", default=None, help="Pickle file containing seen kmers (default: None)")
 parser.add_argument("-r", "--retain", type=float, default=0.0, help="Likelihood a duplicate kmer will be allowed through as a value from [0,1]")
+parser.add_argument("-seed", "--seed", type=int, default=123, help="Random seed for reproducibility")
+
 
 args = parser.parse_args()
 
@@ -59,6 +61,8 @@ file_basename = os.path.splitext(os.path.basename(fasta))[0]
 k = args.k
 sample_len = args.sample_len
 min_sample_len = args.min_sample_len
+seed = args.seed
+rng=random.Random(seed)
 if args.seen_kmers is not None:
     seen_kmers = pickle.load(open(args.seen_kmers, "rb"))
 else:
@@ -82,6 +86,14 @@ def encode_kmer(kmer):
         kmer_num = (kmer_num << 2) | char_map[c]
     return kmer_num
 
+def decode_kmer(kmer_num, k=32):
+    char_map = {0:'A', 1:'C', 2:'G', 3:'T'}
+    kmer = []
+    for i in range(k):
+        nucleotide_code = kmer_num & 3 # 0x11
+        kmer.append(char_map[nucleotide_code])
+        kmer_num >>= 2
+    return ''.join(reversed(kmer))
 
 def n_check(seq, sample_start, sample_end, skipped_regions):
     "Skip over regions with N"
@@ -105,7 +117,7 @@ def sample_scan(seq, start, end, k, seen_kmers, sample_seen_kmers, masked_starts
             sample_seen_kmers.add(kmer)
         # If we've seen this kmer before, stop analyzing this sample unless it passes random check
         else:
-            if random.random() > dedup_retain:
+            if rng.random() > dedup_retain:
                 continue
             else:
                 # Handle finding a repeat
@@ -233,7 +245,7 @@ def deduplicate(seq, k, sample_len, seen_kmers=None, min_sample_len=None):
             # Record sample indices
             sample_regions.append((sample_start, sample_end_idx))
 
-            # TODO: add ignored kmers at the edges of samples
+            # TODO: add ignored kmers at the edges of samples?
 
         # If not a valid sample, record skipped region
         else:
@@ -256,26 +268,12 @@ def deduplicate(seq, k, sample_len, seen_kmers=None, min_sample_len=None):
     return sample_regions, masked_starts, skipped_regions, seen_kmers
 # =====================================
 
-
-
-
-# #sequence = "AAACCCAACACCGGGGGGTGTGTGAAA"
-# #sequence = "AAACCCAACACC"
-# #sequence = "AAACCCAAACCC"
-# sequence = "AAANAAACCCAACACCNGGGGGNT"
-# k = 3
-# sample_len = 4
-
-
-
-
-
-
 with open(fasta, 'r') as f:
     for record in SeqIO.parse(f, "fasta"):
         sequence = str(record.seq)
         seqname = record.id
         sample_regions, masked_starts, skipped_regions, seen_kmers = deduplicate(sequence, k, sample_len, seen_kmers=seen_kmers)
+
 
         print(f"Sample regions: {sample_regions}")
         print(f"Masked starts: {masked_starts}")
@@ -291,3 +289,16 @@ with open(fasta, 'r') as f:
     output_dump(local_dict, file_basename)
 writeout_kmers(seen_kmers, file_basename + f".pickle")
 
+
+# Test encoder/decoder
+kmers = ["GATTACA", "GATTACAT", "TCCATGGAC"]
+for kmer in kmers:
+    print(f"kmer = {kmer}; encoded kmer = {encode_kmer(kmer)}; decoded kmer = {decode_kmer(encode_kmer(kmer), len(kmer))}")
+exit()
+
+#sequence = "AAACCCAACACCGGGGGGTGTGTGAAA"
+#sequence = "AAACCCAACACC"
+#sequence = "AAACCCAAACCC"
+sequence = "AAANAAACCCAACACCNGGGGGNT"
+k = 3
+sample_len = 4
