@@ -103,22 +103,27 @@ def writeout_bed(name, regions, bedfile, seq_len=None):
     """
     Create bed files for regions or just a list of start sites for beginning positions
     """
-    with open(bedfile, 'w') as f:
-        if len(regions[0]) == 2:
-            for start, end in regions:
-                f.write(f"{name}\t{start}\t{end}\n")
-        else:
-            for start in regions:
-                if seq_len is None:
-                    f.write(f"{name}\t{start}\n")
-                else:
-                    f.write(f"{name}\t{start}\t{start+seq_len}\n")
+    #with open(bedfile, 'w') as f:
+    if len(regions) < 1:
+        return
+    if len(regions[0]) == 2:
+        for start, end in regions:
+            f.write(f"{name}\t{start}\t{end}\n")
+    else:
+        for start in regions:
+            if seq_len is None:
+                f.write(f"{name}\t{start}\n")
+            else:
+                f.write(f"{name}\t{start}\t{start+seq_len}\n")
 
-def writeout_kmers(seen_kmer_set, outfile):
+def writeout_kmers(seen_kmer_set, file_basename):
     """
     Dump seen kmers into a pickle file that can be used as input for next dedup file
     """
-    with open(outfile, 'w') as f:
+    print(f"seen kmer set: {seen_kmer_set}")
+    outfile = file_basename + ".kmers.pkl"
+    print(f"outfile: {outfile}")
+    with open(outfile, 'wb') as f:
         pickle.dump(seen_kmer_set, f)
 
 def output_dump(local_dict, file_basename):
@@ -175,6 +180,11 @@ def test_with_sequence(sequence, k, sample_len, seen_kmers):
 
 ## Main Deduplication ================
 def deduplicate_seq(seq, seen_kmers, args):
+
+    ## For testing purposes 
+    sample_regions, masked_starts, skipped_regions = [], [], []
+    return sample_regions, masked_starts, skipped_regions, seen_kmers
+    ##
 
     # Collect needed args
     k = args.k
@@ -292,7 +302,9 @@ def deduplicate_genome(fasta, seen_kmers, args):
     local_dict = {}
 
     # Set output prefix
-    fasta_basename = ''.join(os.path.basename(fasta).split(".")[:-1])
+    n_suffixes = 2 if fasta.endswith(".gz") else 1
+    fasta_basename = '.'.join(os.path.basename(fasta).split('.')[:-(n_suffixes)])
+    print(f"fasta basename: {fasta_basename}")
     out_prefix = os.path.join(args.output_dir, fasta_basename)
 
     # Flexible function to open either a regular or gzipped file
@@ -310,7 +322,6 @@ def deduplicate_genome(fasta, seen_kmers, args):
             seqname = record.id
 
             print(f"{seqname}: {len(sequence)} bp")
-            continue
 
             # Deduplicate this sequence
             sample_regions, masked_starts, skipped_regions, seen_kmers = deduplicate_seq(sequence, seen_kmers, args)
@@ -326,9 +337,9 @@ def deduplicate_genome(fasta, seen_kmers, args):
                 "skipped_regions": skipped_regions,
             }
 
-        #output_dump(local_dict, out_prefix)
+        output_dump(local_dict, out_prefix)
 
-    #writeout_kmers(seen_kmers, file_basename + f".pickle")
+    writeout_kmers(seen_kmers, out_prefix)
 
     print(f"Done with {fasta}")
     return seen_kmers
