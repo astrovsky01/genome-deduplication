@@ -41,6 +41,7 @@
 import argparse
 import Bio
 from Bio import SeqIO
+import gzip
 import pickle
 import os
 import random
@@ -76,7 +77,7 @@ def n_check(seq, sample_start, sample_end, skipped_regions):
         sample_start = sample_end
     return(skipped_regions, sample_start, sample_end)
 
-def sample_scan(seq, start, end, k, seen_kmers, sample_seen_kmers, masked_starts, dedup_retain=globals()["retain"]):
+def sample_scan(seq, start, end, k, seen_kmers, sample_seen_kmers, masked_starts, dedup_retain):
     """Scan a sample for kmers. If a duplicate is found either within the same set or globally, 
     return the index of the start of the duplicate kmer. If no duplicate is found, """
     for kmer_start_idx in range(start, end-k+1):
@@ -173,7 +174,7 @@ def test_with_sequence(sequence, k, sample_len, seen_kmers):
 ### Main functions
 
 ## Main Deduplication ================
-def deduplicate_seq(seq, args, seen_kmers):
+def deduplicate_seq(seq, seen_kmers, args):
 
     # Collect needed args
     k = args.k
@@ -247,7 +248,7 @@ def deduplicate_seq(seq, args, seen_kmers):
         #         sample_end = kmer_start_idx
         #         exited_early = True
         #         break
-        sample_seen_kmers, masked_starts, exited_early, sample_end = sample_scan(seq, sample_start, sample_end, k, seen_kmers, sample_seen_kmers, masked_starts)
+        sample_seen_kmers, masked_starts, exited_early, sample_end = sample_scan(seq, sample_start, sample_end, k, seen_kmers, sample_seen_kmers, masked_starts, retain_rate)
        
         # Check if we found a valid sample (didn't exit too early)
         # If exited early, sample_end is sample_end + k - 1
@@ -285,6 +286,8 @@ def deduplicate_seq(seq, args, seen_kmers):
 
 def deduplicate_genome(fasta, seen_kmers, args):
 
+    print("Here in deduplicate_genome()")
+
     # Keep dict associating the regions with the sequence name
     local_dict = {}
 
@@ -292,14 +295,25 @@ def deduplicate_genome(fasta, seen_kmers, args):
     fasta_basename = ''.join(os.path.basename(fasta).split(".")[:-1])
     out_prefix = os.path.join(args.output_dir, fasta_basename)
 
+    # Flexible function to open either a regular or gzipped file
+    def open_maybe_gzip(fname):
+        with open(fname, "rb") as raw:
+            signature = raw.read(2)
+        if signature == b"\x1f\x8b":
+            return gzip.open(fname, "rt")
+        return open(fname, "rt")
+
     # Read in fasta
-    with open(fasta, 'r') as f:
+    with open_maybe_gzip(fasta) as f:
         for record in SeqIO.parse(f, "fasta"):
             sequence = str(record.seq)
             seqname = record.id
 
+            print(f"{seqname}: {len(sequence)} bp")
+            continue
+
             # Deduplicate this sequence
-            sample_regions, masked_starts, skipped_regions, seen_kmers = deduplicate(sequence, seen_kmers, args)
+            sample_regions, masked_starts, skipped_regions, seen_kmers = deduplicate_seq(sequence, seen_kmers, args)
 
             print(f"Sample regions: {sample_regions}")
             print(f"Masked starts: {masked_starts}")
@@ -312,15 +326,18 @@ def deduplicate_genome(fasta, seen_kmers, args):
                 "skipped_regions": skipped_regions,
             }
 
-        output_dump(local_dict, out_prefix)
+        #output_dump(local_dict, out_prefix)
 
-    writeout_kmers(seen_kmers, file_basename + f".pickle")
+    #writeout_kmers(seen_kmers, file_basename + f".pickle")
 
     print(f"Done with {fasta}")
     return seen_kmers
 
 
 def deduplicate(args):
+
+    print("Here in deduplicate()")
+    print(f"args: {args}")
 
     # Read input file of genome locations
     with open(args.input, 'r') as f:
@@ -359,7 +376,7 @@ def __main__():
     parser.add_argument("input", help="Input list of FASTA files")
     parser.add_argument("-k", "--kmer", type=int, default=32, help="Kmer size (default: 32)")
     parser.add_argument("-l", "--sample_len", type=int, default=1000, help="Sample length (default: 1000)")
-    parser.add_argument("-m", "--min_sample_len", type=int, default=50, help="Minimum sample length (default: 50)")
+    parser.add_argument("-m", "--min_sample_len", type=int, default=None, help="Minimum sample length (default: 50)")
     parser.add_argument("-o", "--output_dir", default="dedup_out", help="Output directory (default: dedup_out/)")
     parser.add_argument("-p", "--seen_kmers", default=None, help="Pickle file containing seen kmers (default: None)")
     parser.add_argument("-r", "--retain", type=float, default=0.0, help="Likelihood a duplicate kmer will be allowed through as a value from [0,1]")
@@ -376,17 +393,21 @@ def __main__():
     if args.kmer < 1:
         raise("Error: kmer size must be a positive integer")
 
+    # Set min kmer length to sample length if None
+    if args.min_sample_len is None:
+        args.min_sample_len = args.sample_len
+
     # Seen kmers must be either none or a valid pickle file
-    if args.seen_kmers if not None:
+    if args.seen_kmers is not None:
         if not os.path.isfile(args.seen_kmers):
             raise("Error: could not find supplied seen kmers file")
 
     # Retain rate must be between 0 and 1
     if args.retain is not None and (args.retain > 1.0 or args.retain < 0.0):
-            raise("Error: Retention rate of duplicate kmers cannot be greater than 1.0 or less than 0.0")
+        raise("Error: Retention rate of duplicate kmers cannot be greater than 1.0 or less than 0.0")
 
     # If sample len is smaller than k, issue warning that no deduplication will occur. Not an error bc this can be a way to create the raw sample sets
-    if args.sample_len < args.k:
+    if args.sample_len < args.kmer:
         print("Warning: sample len is smaller than k, meaning no deduplication will occur")
 
     # If min sample len is higher than sample len, set min to equal the default sample len
@@ -400,7 +421,7 @@ def __main__():
 
     # Create output directory if it doesn't already exist
     if not os.path.isdir(args.output_dir):
-        os.makedirs(args.output_dir)
+        os.makedirs(args.output_dir, exist_ok=True)
 
     ## Run deduplication
     deduplicate(args)
