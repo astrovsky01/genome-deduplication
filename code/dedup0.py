@@ -41,12 +41,13 @@ from Bio import SeqIO
 import pickle
 import os
 import random
+from dedup_functions import *
 
 
 ## Variable setting ================
 parser = argparse.ArgumentParser()
 parser.add_argument("fasta", help="Input FASTA file")
-parser.add_argument("-k". "--kmer", type=int, default=32, help="Kmer size (default: 32)")
+parser.add_argument("-k", "--kmer", type=int, default=32, help="Kmer size (default: 32)")
 parser.add_argument("-l", "--sample_len", type=int, default=1000, help="Sample length (default: 1000)")
 parser.add_argument("-m", "--min_sample_len", type=int, default=50, help="Minimum sample length (default: 50)")
 parser.add_argument("-p", "--seen_kmers", default=None, help="Pickle file containing seen kmers (default: None)")
@@ -77,97 +78,12 @@ local_dict = {}
 # =====================================
 
 
-## Component functions ================
-
-def encode_kmer(kmer):
-    char_map = {'A':0, 'C':1, 'G':2, 'T':3}
-    kmer_num = 0
-    for c in kmer:
-        kmer_num = (kmer_num << 2) | char_map[c]
-    return kmer_num
-
-def decode_kmer(kmer_num, k=32):
-    char_map = {0:'A', 1:'C', 2:'G', 3:'T'}
-    kmer = []
-    for i in range(k):
-        nucleotide_code = kmer_num & 3 # 0x11
-        kmer.append(char_map[nucleotide_code])
-        kmer_num >>= 2
-    return ''.join(reversed(kmer))
-
-def n_check(seq, sample_start, sample_end, skipped_regions):
-    "Skip over regions with N"
-    gap_index = seq[sample_start:sample_end].find('N')        
-    if gap_index > -1:
-        sample_end = sample_start + gap_index + 1
-        skipped_regions.append((sample_start, sample_end))
-        sample_start = sample_end
-    return(skipped_regions, sample_start, sample_end)
-
-def sample_scan(seq, start, end, k, seen_kmers, sample_seen_kmers, masked_starts, dedup_retain=globals()["retain"]):
-    """Scan a sample for kmers. If a duplicate is found either within the same set or globally, 
-    return the index of the start of the duplicate kmer. If no duplicate is found, """
-    for kmer_start_idx in range(start, end-k+1):
-
-        # Get encoded kmer
-        kmer = encode_kmer(seq[kmer_start_idx:kmer_start_idx+k])
-
-        # If we haven't seen this kmer in this sample before, record it in the sample kmers
-        if kmer not in seen_kmers and kmer not in sample_seen_kmers:
-            sample_seen_kmers.add(kmer)
-        # If we've seen this kmer before, stop analyzing this sample unless it passes random check
-        else:
-            if rng.random() > dedup_retain:
-                continue
-            else:
-                # Handle finding a repeat
-                return sample_seen_kmers, masked_starts, True, kmer_start_idx
-    return sample_seen_kmers, masked_starts, False, end
-
-# =====================================
-
-
-## Output Functions ================
-
-def writeout_bed(name, regions, bedfile):
-    """
-    Create bed files for regions or just a list of start sites for beginning positions
-    """
-    with open(bedfile, 'w') as f:
-        if len(regions[0]) == 2:
-            for start, end in regions:
-                f.write(f"{name}\t{start}\t{end}\n")
-        else:
-            for start in regions:
-                f.write(f"{name}\t{start}\n")
-
-def writeout_kmers(seen_kmer_set, outfile):
-    """
-    Dump seen kmers into a pickle file that can be used as input for next dedup file
-    """
-    with open(outfile, 'w') as f:
-        pickle.dump(seen_kmer_set, f)
-
-def output_dump(local_dict, file_basename):
-    """
-    Output all bed files
-    """
-    with open(file_basename + "_sample_regions.bed", 'w') as sample_regions:
-        with open(file_basename + "_masked_starts.bed", 'w') as masked_starts:
-            with open(file_basename + "_skipped_regions.bed", 'w') as skipped_regions:
-                for seqname in local_dict.keys():
-                    writeout_bed(seqname, local_dict[seqname]["sample_regions"], sample_regions)
-                    writeout_bed(seqname, local_dict[seqname]["masked_starts"], masked_starts)
-                    writeout_bed(seqname, local_dict[seqname]["skipped_regions"], skipped_regions)
-# =====================================
-
-
 ## Main Deduplication ================
 def deduplicate(seq, k, sample_len, seen_kmers=None, min_sample_len=None):
 
     # Check validity of inputs
-    if k < sample_len:
-        raise("Error: sample length cannot be greater than k.")
+    if k > sample_len:
+        raise("Error: K cannot be greater than sample length.")
     if min_sample_len is not None and len(seq) < min_sample_len:
         raise("Error: the sequence length is less than min_sample_len.")
     if min_sample_len is None and len(seq) < sample_len:
