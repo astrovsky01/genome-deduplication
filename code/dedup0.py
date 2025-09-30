@@ -97,7 +97,6 @@ def sample_scan(seq, start, end, k, seen_kmers, sample_seen_kmers, masked_starts
                 return sample_seen_kmers, masked_starts, True, kmer_start_idx
     return sample_seen_kmers, masked_starts, False, end
 
-<<<<<<< HEAD
 # Function to check a sample for duplicates, allowing some rate of duplicates
 def check_sample(seq, seen_kmers, k, allowed_duplicate_rate):
 
@@ -138,38 +137,6 @@ def type_check(file):
         pass
     else:
         raise ValueError("Error: could not determine file type. Supported types are .fasta, .fa, .fna, .fasta.gz, .txt, .list")
-        
-# Function to check a sample for duplicates, allowing some rate of duplicates
-def check_sample(seq, seen_kmers, k, allowed_duplicate_rate):
-
-    # Data structure for new kmers in this sample - see note above
-    sample_seen_kmers = set()
-    
-    # Loop through all kmers in this possible sample
-    for kmer_start_idx in range(len(seq)-k+1):
-
-        # Get kmer and its encoding for storage
-        kmer = seq[kmer_start_idx:kmer_start_idx+k]
-        kmer_num = encode_kmer(kmer)
-
-        # If we haven't seen this kmer before, record it in the sample kmers
-        if kmer_num not in seen_kmers and kmer_num not in sample_seen_kmers:
-            sample_seen_kmers.add(kmer_num)
-
-        # If we've seen this kmer before, stop analyzing this sample
-        else:
-
-            # Stochasticity is built in here here; if random() < allowed duplicate rate, let through this duplicate
-            if allowed_duplicate_rate > 0 and rng.random() < allowed_duplicate_rate:
-                continue
-
-            # Handle finding a repeat
-            sample_end = kmer_start_idx
-            return sample_seen_kmers, kmer_start_idx
-
-    return sample_seen_kmers, -1
-
-## Output Functions ================
 
 def writeout_bed(name, regions, bedfile, tpl_input=True, seq_len=None):
     """
