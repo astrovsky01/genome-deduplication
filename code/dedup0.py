@@ -45,7 +45,6 @@ import gzip
 import pickle
 import os
 import random
-from dedup_functions import *
 
 
 ###=============================================================================
@@ -98,7 +97,16 @@ def sample_scan(seq, start, end, k, seen_kmers, sample_seen_kmers, masked_starts
                 return sample_seen_kmers, masked_starts, True, kmer_start_idx
     return sample_seen_kmers, masked_starts, False, end
 
-## Output Functions ================
+## I/O Functions ================
+
+def type_check(file):
+    """
+    Check if file is gzipped or not
+    """
+    if file.endswith(".gz") or file.endswith(".fasta") or file.endswith(".fa") or file.endswith(".fna") or file.endswith(".txt") or file.endswith(".list"):
+        pass
+    else:
+        raise ValueError("Error: could not determine file type. Supported types are .fasta, .fa, .fna, .fasta.gz, .txt, .list")
 
 def writeout_bed(name, regions, bedfile, seq_len=None):
     """
@@ -393,6 +401,11 @@ def __main__():
     parser.add_argument("-p", "--seen_kmers", default=None, help="Pickle file containing seen kmers (default: None)")
     parser.add_argument("-r", "--retain", type=float, default=0.0, help="Likelihood a duplicate kmer will be allowed through as a value from [0,1]")
     parser.add_argument("-seed", "--seed", type=int, default=123, help="Random seed for reproducibility")
+    # Hidden test function -- pass in a file (.fa or .txt) here with expected results to verify correctness
+    parser.add_argument("-T", "--test", help=argparse.SUPPRESS)
+    # Hidden test kmer set input for testing. If not included, will start with empty kmer set
+    parser.add_argument("-I", "--test-input-kmers",  help=argparse.SUPPRESS)
+    parser.add_argument("-O", "--test-output-kmers", help=argparse.SUPPRESS)
     args = parser.parse_args()
 
     ## Process input args, checking for validity
@@ -435,9 +448,28 @@ def __main__():
     if not os.path.isdir(args.output_dir):
         os.makedirs(args.output_dir, exist_ok=True)
 
-    ## Run deduplication
-    deduplicate(args)
+    # Test all input files are valid extension types
+    for n in args.input:
+        type_check(n)
 
+    
+    ## Run deduplication
+    if not args.test:
+        deduplicate(args)
+    else:
+        if args.input.endswith(".txt"):
+            with open(args.input, 'r') as f:
+                sequence = f.read().strip()
+            test_with_sequence(sequence, args.kmer, args.sample_len, None)
+        else:
+            file_basename = args.input().split('.')[0]
+            file_outputname=file_basename + ".pickle"
+            input_kmers = pickle.load(open(args.test_input_kmers, "rb")) if args.test_input_kmers is not None else set()
+            assert args.ouptput_kmers is not None, "Error: must provide output kmer file when testing"
+            output_compare = pickle.load(open(args.output_kmers, "rb"))
+            test_with_fasta(args.input, args.kmer, args.sample_len, input_kmers)
+            assert output_kmers == pickle.load(file_outputname), "Error: output kmers do not match expected output"
+            assert
 
 if __name__ == "__main__":
     __main__()
