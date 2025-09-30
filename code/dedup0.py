@@ -411,7 +411,7 @@ def __main__():
     parser.add_argument("-I", "--test-input-kmers", type=str, help=argparse.SUPPRESS)
     parser.add_argument("-O", "--test-output-kmers", type=str, help=argparse.SUPPRESS)
     args = parser.parse_args()
-
+q
     ## Process input args, checking for validity
 
     # Input fasta must be a valid file
@@ -470,7 +470,7 @@ def __main__():
             file_outputname=file_basename + ".pickle"
             input_kmers = pickle.load(open(args.test_input_kmers, "rb")) if args.test_input_kmers is not None else set()
             assert args.ouptput_kmers is not None, "Error: must provide output kmer file when testing"
-            output_compare = pickle.load(open(args.output_kmgers, "rb"))
+            output_compare = pickle.load(open(args.output_kmers, "rb"))
             test_with_fasta(args.input, args.kmer, args.sample_len, input_kmers)
             assert output_kmers == pickle.load(file_outputname), "Error: output kmers do not match expected output"
             assert
