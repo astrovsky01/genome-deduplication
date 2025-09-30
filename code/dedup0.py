@@ -404,8 +404,8 @@ def __main__():
     # Hidden test function -- pass in a file (.fa or .txt) here with expected results to verify correctness
     parser.add_argument("-T", "--test", help=argparse.SUPPRESS)
     # Hidden test kmer set input for testing. If not included, will start with empty kmer set
-    parser.add_argument("-I", "--test-input-kmers",  help=argparse.SUPPRESS)
-    parser.add_argument("-O", "--test-output-kmers", help=argparse.SUPPRESS)
+    parser.add_argument("-I", "--test-input-kmers", type=str, help=argparse.SUPPRESS)
+    parser.add_argument("-O", "--test-output-kmers", type=str, help=argparse.SUPPRESS)
     args = parser.parse_args()
 
     ## Process input args, checking for validity
@@ -466,7 +466,7 @@ def __main__():
             file_outputname=file_basename + ".pickle"
             input_kmers = pickle.load(open(args.test_input_kmers, "rb")) if args.test_input_kmers is not None else set()
             assert args.ouptput_kmers is not None, "Error: must provide output kmer file when testing"
-            output_compare = pickle.load(open(args.output_kmers, "rb"))
+            output_compare = pickle.load(open(args.output_kmgers, "rb"))
             test_with_fasta(args.input, args.kmer, args.sample_len, input_kmers)
             assert output_kmers == pickle.load(file_outputname), "Error: output kmers do not match expected output"
             assert
