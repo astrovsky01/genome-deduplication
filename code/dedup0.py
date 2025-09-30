@@ -97,17 +97,6 @@ def sample_scan(seq, start, end, k, seen_kmers, sample_seen_kmers, masked_starts
                 return sample_seen_kmers, masked_starts, True, kmer_start_idx
     return sample_seen_kmers, masked_starts, False, end
 
-## I/O Functions ================
-
-def type_check(file):
-    """
-    Check if file is gzipped or not
-    """
-    if file.endswith(".gz") or file.endswith(".fasta") or file.endswith(".fa") or file.endswith(".fna") or file.endswith(".txt") or file.endswith(".list"):
-        pass
-    else:
-        raise ValueError("Error: could not determine file type. Supported types are .fasta, .fa, .fna, .fasta.gz, .txt, .list")
-        
 # Function to check a sample for duplicates, allowing some rate of duplicates
 def check_sample(seq, seen_kmers, k, allowed_duplicate_rate):
 
@@ -138,7 +127,16 @@ def check_sample(seq, seen_kmers, k, allowed_duplicate_rate):
 
     return sample_seen_kmers, -1
 
-## Output Functions ================
+## I/O Functions ================
+
+def type_check(file):
+    """
+    Check if file is gzipped or not
+    """
+    if file.endswith(".gz") or file.endswith(".fasta") or file.endswith(".fa") or file.endswith(".fna") or file.endswith(".txt") or file.endswith(".list"):
+        pass
+    else:
+        raise ValueError("Error: could not determine file type. Supported types are .fasta, .fa, .fna, .fasta.gz, .txt, .list")
 
 def writeout_bed(name, regions, bedfile, tpl_input=True, seq_len=None):
     """
@@ -408,8 +406,8 @@ def __main__():
     # Hidden test function -- pass in a file (.fa or .txt) here with expected results to verify correctness
     parser.add_argument("-T", "--test", help=argparse.SUPPRESS)
     # Hidden test kmer set input for testing. If not included, will start with empty kmer set
-    parser.add_argument("-I", "--test-input-kmers",  help=argparse.SUPPRESS)
-    parser.add_argument("-O", "--test-output-kmers", help=argparse.SUPPRESS)
+    parser.add_argument("-I", "--test-input-kmers", type=str, help=argparse.SUPPRESS)
+    parser.add_argument("-O", "--test-output-kmers", type=str, help=argparse.SUPPRESS)
     args = parser.parse_args()
 
     ## Process input args, checking for validity
@@ -472,8 +470,7 @@ def __main__():
             assert args.ouptput_kmers is not None, "Error: must provide output kmer file when testing"
             output_compare = pickle.load(open(args.output_kmers, "rb"))
             test_with_fasta(args.input, args.kmer, args.sample_len, input_kmers)
-            assert output_kmers == pickle.load(file_outputname), "Error: output kmers do not match expected output"
-            assert
+            assert output_compare == pickle.load(file_outputname), "Error: output kmers do not match expected output"
 
 if __name__ == "__main__":
     __main__()
