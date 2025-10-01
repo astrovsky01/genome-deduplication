@@ -117,6 +117,20 @@ def check_sample(seq, seen_kmers, k, allowed_duplicate_rate):
 
     return sample_seen_kmers, -1
 
+# Group masked indices into contiguous bed regions
+# e.g. [2,3,4,7,8,20] -> [(2,5), (7,9), (20,21)]
+def condense_masked_regions(masked):
+    masked_regions = []
+    if len(masked) == 0:
+        return masked_regions
+    region_start = masked[0]
+    for i in range(len(masked)-1):
+        if masked[i] + 1 != masked[i+1]:
+            masked_regions.append((region_start, masked[i] + 1))
+            region_start = masked[i+1]
+    masked_regions.append((region_start, masked[-1] + 1))
+    return masked_regions
+
 ## I/O Functions ================
 
 def type_check(file):
@@ -136,22 +150,16 @@ def open_maybe_gzip(fname):
         return gzip.open(fname, "rt")
     return open(fname, "rt")
 
-def writeout_bed(name, regions, bedfile, tpl_input=True, seq_len=None):
+# Extra term is a value that will be written to every row of the 4th column
+def writeout_bed(name, regions, bedfile, extra_col_val=None):
     """
-    Create bed files for regions or just a list of start sites for beginning positions
+    Create bed files for regions
     """
-    #with open(bedfile, 'w') as f:
     if len(regions) < 1:
         return
-    if tpl_input:
-        for start, end in regions:
-            bedfile.write(f"{name}\t{start}\t{end}\n")
-    else:
-        for start in regions:
-            if seq_len is None:
-                bedfile.write(f"{name}\t{start}\n")
-            else:
-                bedfile.write(f"{name}\t{start}\t{start+seq_len}\n")
+    extra_term = "" if extra_col_val is None else f"\t{extra_col_val}"
+    for start,end in regions:
+        bedfile.write(f"{name}\t{start}\t{end}{extra_term}\n")
 
 def writeout_kmers(seen_kmer_set, file_basename):
     """
@@ -166,11 +174,11 @@ def output_dump(local_dict, file_basename, k):
     Output all bed files
     """
     with open(file_basename + ".samples.bed", 'w') as sample_regions:
-        with open(file_basename + ".masks.bed", 'w') as masked_starts:
+        with open(file_basename + ".masks.bed", 'w') as masked_regions:
             with open(file_basename + ".ignored.bed", 'w') as skipped_regions:
                 for seqname in local_dict.keys():
                     writeout_bed(seqname, local_dict[seqname]["sample_regions"], sample_regions)
-                    writeout_bed(seqname, local_dict[seqname]["masked_starts"], masked_starts, tpl_input=False, seq_len=k)
+                    writeout_bed(seqname, local_dict[seqname]["masked_regions"], masked_regions)
                     writeout_bed(seqname, local_dict[seqname]["skipped_regions"], skipped_regions)
 
 ## Testing Functions ================
@@ -297,7 +305,10 @@ def deduplicate_seq(seq, seen_kmers, args):
     if sample_start < len(seq):
         skipped_regions.append((sample_start, len(seq)))
 
-    return sample_regions, masked_starts, skipped_regions, seen_kmers
+    # Convert from a list of mask starting indices to masked regions
+    masked_regions = condense_masked_regions(masked_starts)
+
+    return sample_regions, masked_regions, skipped_regions, seen_kmers
 
 
 def deduplicate_genome(fasta, seen_kmers, args):
@@ -310,7 +321,6 @@ def deduplicate_genome(fasta, seen_kmers, args):
     # Set output prefix
     n_suffixes = 2 if fasta.endswith(".gz") else 1
     fasta_basename = '.'.join(os.path.basename(fasta).split('.')[:-(n_suffixes)])
-    print(f"fasta basename: {fasta_basename}")
     out_prefix = os.path.join(args.output_dir, fasta_basename)
 
     # Read in fasta
@@ -322,16 +332,16 @@ def deduplicate_genome(fasta, seen_kmers, args):
             print(f"{seqname}: {len(sequence)} bp")
 
             # Deduplicate this sequence
-            sample_regions, masked_starts, skipped_regions, seen_kmers = deduplicate_seq(sequence, seen_kmers, args)
+            sample_regions, masked_regions, skipped_regions, seen_kmers = deduplicate_seq(sequence, seen_kmers, args)
 
-            print(f"Sample regions: {sample_regions}")
-            print(f"Masked starts: {masked_starts}")
-            print(f"Skipped regions: {skipped_regions}")
+            #print(f"Sample regions: {sample_regions}")
+            #print(f"Masked regions: {masked_regions}")
+            #print(f"Skipped regions: {skipped_regions}")
 
             # Associate deduplication data with the sequence name
             local_dict[seqname] = {
                 "sample_regions": sample_regions,
-                "masked_starts": masked_starts,
+                "masked_regions": masked_regions,
                 "skipped_regions": skipped_regions,
             }
 
