@@ -475,12 +475,6 @@ def __main__():
     # Create output directory if it doesn't already exist
     if not os.path.isdir(args.output_dir):
         os.makedirs(args.output_dir, exist_ok=True)
-
-    # Test all input files are valid extension types
-    for n in args.input:
-        print(len(args.input))
-        type_check(n)
-
     
     ## Run deduplication
     print(args)
@@ -488,8 +482,8 @@ def __main__():
         deduplicate(args)
     else:
         input=args.input[0]
-        print("Test mode")
         if input.endswith(".txt"):
+            print("Testing with sequence")
             test_with_sequence(args)
         else:
             print("Testing with fasta")
