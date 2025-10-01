@@ -39,12 +39,11 @@
 ### Imports
 
 import argparse
-import Bio
 from Bio import SeqIO
 import gzip
 import pickle
 import os
-import random
+import random as rng
 
 
 ###=============================================================================
@@ -67,35 +66,6 @@ def decode_kmer(kmer_num, k=32):
         kmer.append(char_map[nucleotide_code])
         kmer_num >>= 2
     return ''.join(reversed(kmer))
-
-def n_check(seq, min_sample_len, sample_start, skipped_regions):
-    """
-    Return the start and end positions of the first sequence that is of 
-    greater than minimal sample length and contains no Ns, as well as the 
-    skip list and a boolean denoting if the region must be skipped altogether.
-    If no such region exists, return the start position and the position of
-    the first character after the final N, as well as the skip list and a
-    """
-    index=0
-    in_sample_skips = []
-    while index<(len(seq)-min_sample_len):
-        N_index = seq[index:].find("N")
-        # No Ns in the remaining sequence
-        if N_index==-1:
-            skipped_regions.append([sample_start,index])
-            return sample_start+index, sample_start+len(seq), skipped_regions, False
-        else:
-            # First N found is before minimal length, add full section to skipped regions and jump forward
-            if (N_index)<(min_sample_len):
-                index=index+N_index+1
-            # First section found of greater than min length
-            else:
-                skipped_regions.append([sample_start, sample_start+index])
-                return sample_start+index, sample_start+index+N_index, skipped_regions, False
-    # If the final section isn't viable, don't skip over the last few characters, change new endpoint to be the position of the first character after final N
-    new_endpoint = sample_start+index
-    skipped_regions.append([sample_start, new_endpoint])
-    return sample_start, new_endpoint, skipped_regions, True
 
 def sample_scan(seq, start, end, k, seen_kmers, sample_seen_kmers, masked_starts, dedup_retain):
     """Scan a sample for kmers. If a duplicate is found either within the same set or globally, 
@@ -157,6 +127,14 @@ def type_check(file):
         pass
     else:
         raise ValueError("Error: could not determine file type. Supported types are .fasta, .fa, .fna, .fasta.gz, .txt, .list")
+
+# Flexible function to open either a regular or gzipped file
+def open_maybe_gzip(fname):
+    with open(fname, "rb") as raw:
+        signature = raw.read(2)
+    if signature == b"\x1f\x8b":
+        return gzip.open(fname, "rt")
+    return open(fname, "rt")
 
 def writeout_bed(name, regions, bedfile, tpl_input=True, seq_len=None):
     """
@@ -276,8 +254,7 @@ def deduplicate_seq(seq, seen_kmers, args):
 
         # Get boundary for this possible sample
         sample_end = sample_start + sample_len
-
-        # Check for Ns
+        # # Check for Ns
         N_index = seq[sample_start:sample_end].find('N')
         # If we find an N
         if N_index > -1:
@@ -292,9 +269,6 @@ def deduplicate_seq(seq, seen_kmers, args):
             # If the first N occurs after the minimum sample length, set the N to be the sample end and continue on to check for the validity of this sample
             else:
                 sample_end = sample_start + N_index
-
-
-        skipped_regions, sample_start, sample_end = n_check(seq, sample_start, sample_end, skipped_regions, min_sample_len)
 
         # Check this sample
         sample_seen_kmers, first_repeat_idx = check_sample(seq[sample_start:sample_end], seen_kmers, k, allowed_duplicate_rate)
@@ -338,14 +312,6 @@ def deduplicate_genome(fasta, seen_kmers, args):
     fasta_basename = '.'.join(os.path.basename(fasta).split('.')[:-(n_suffixes)])
     print(f"fasta basename: {fasta_basename}")
     out_prefix = os.path.join(args.output_dir, fasta_basename)
-
-    # Flexible function to open either a regular or gzipped file
-    def open_maybe_gzip(fname):
-        with open(fname, "rb") as raw:
-            signature = raw.read(2)
-        if signature == b"\x1f\x8b":
-            return gzip.open(fname, "rt")
-        return open(fname, "rt")
 
     # Read in fasta
     with open_maybe_gzip(fasta) as f:
@@ -479,6 +445,7 @@ def __main__():
     ## Run deduplication
     print(args)
     if not args.test:
+        print("Running deduplication")
         deduplicate(args)
     else:
         input=args.input[0]
