@@ -39,12 +39,11 @@
 ### Imports
 
 import argparse
-import Bio
 from Bio import SeqIO
 import gzip
 import pickle
 import os
-import random
+import random as rng
 
 
 ###=============================================================================
@@ -68,15 +67,6 @@ def decode_kmer(kmer_num, k=32):
         kmer_num >>= 2
     return ''.join(reversed(kmer))
 
-def n_check(seq, sample_start, sample_end, skipped_regions):
-    "Skip over regions with N"
-    gap_index = seq[sample_start:sample_end].find('N')        
-    if gap_index > -1:
-        sample_end = sample_start + gap_index + 1
-        skipped_regions.append((sample_start, sample_end))
-        sample_start = sample_end
-    return(skipped_regions, sample_start, sample_end)
-
 def sample_scan(seq, start, end, k, seen_kmers, sample_seen_kmers, masked_starts, dedup_retain):
     """Scan a sample for kmers. If a duplicate is found either within the same set or globally, 
     return the index of the start of the duplicate kmer. If no duplicate is found, """
@@ -99,7 +89,7 @@ def sample_scan(seq, start, end, k, seen_kmers, sample_seen_kmers, masked_starts
 
 # Function to check a sample for duplicates, allowing some rate of duplicates
 def check_sample(seq, seen_kmers, k, allowed_duplicate_rate):
-
+    """Allow all kmers to allow through at a fixed rate even if they are duplicates."""
     # Data structure for new kmers in this sample - see note above
     sample_seen_kmers = set()
     
@@ -137,6 +127,14 @@ def type_check(file):
         pass
     else:
         raise ValueError("Error: could not determine file type. Supported types are .fasta, .fa, .fna, .fasta.gz, .txt, .list")
+
+# Flexible function to open either a regular or gzipped file
+def open_maybe_gzip(fname):
+    with open(fname, "rb") as raw:
+        signature = raw.read(2)
+    if signature == b"\x1f\x8b":
+        return gzip.open(fname, "rt")
+    return open(fname, "rt")
 
 def writeout_bed(name, regions, bedfile, tpl_input=True, seq_len=None):
     """
@@ -184,7 +182,6 @@ def test_with_fasta(fasta, k, sample_len, seen_kmers):
             seqname = record.id
             sample_regions, masked_starts, skipped_regions, seen_kmers = deduplicate(sequence, k, sample_len, seen_kmers=seen_kmers)
 
-
             print(f"Sample regions: {sample_regions}")
             print(f"Masked starts: {masked_starts}")
             print(f"Skipped regions: {skipped_regions}")
@@ -201,15 +198,16 @@ def test_with_fasta(fasta, k, sample_len, seen_kmers):
 
     writeout_kmers(seen_kmers, file_basename + f".pickle")
 
-    print(f"Done with {fasta}")
 
-
-def test_with_sequence(sequence, k, sample_len, seen_kmers):
-    sample_regions, masked_starts, skipped_regions, seen_kmers = deduplicate(sequence, k, sample_len, seen_kmers=seen_kmers)
-    print(sample_regions)
-    print(masked_starts)
-    print(skipped_regions)
-    print(seen_kmers)
+def test_with_sequence(args):
+    with open(args.input[0], 'r') as f:
+        seq = f.read().strip()
+    sample_regions, masked_starts, skipped_regions, seen_kmers = deduplicate_seq(seq, args.seen_kmers, args)
+    print("Sample regions: ", sample_regions)
+    print("Masked starts: ", masked_starts)
+    print("Skipped regions: ", skipped_regions)
+    print("Seen kmers: ", seen_kmers)
+    return sample_regions, masked_starts, skipped_regions, seen_kmers
 
 
 ###=============================================================================
@@ -256,8 +254,7 @@ def deduplicate_seq(seq, seen_kmers, args):
 
         # Get boundary for this possible sample
         sample_end = sample_start + sample_len
-
-        # Check for Ns
+        # # Check for Ns
         N_index = seq[sample_start:sample_end].find('N')
         # If we find an N
         if N_index > -1:
@@ -272,7 +269,6 @@ def deduplicate_seq(seq, seen_kmers, args):
             # If the first N occurs after the minimum sample length, set the N to be the sample end and continue on to check for the validity of this sample
             else:
                 sample_end = sample_start + N_index
-
 
         # Check this sample
         sample_seen_kmers, first_repeat_idx = check_sample(seq[sample_start:sample_end], seen_kmers, k, allowed_duplicate_rate)
@@ -317,14 +313,6 @@ def deduplicate_genome(fasta, seen_kmers, args):
     print(f"fasta basename: {fasta_basename}")
     out_prefix = os.path.join(args.output_dir, fasta_basename)
 
-    # Flexible function to open either a regular or gzipped file
-    def open_maybe_gzip(fname):
-        with open(fname, "rb") as raw:
-            signature = raw.read(2)
-        if signature == b"\x1f\x8b":
-            return gzip.open(fname, "rt")
-        return open(fname, "rt")
-
     # Read in fasta
     with open_maybe_gzip(fasta) as f:
         for record in SeqIO.parse(f, "fasta"):
@@ -361,30 +349,31 @@ def deduplicate(args):
     print(f"args: {args}")
 
     # Read input file of genome locations
-    with open(args.input, 'r') as f:
-        fastas = [line.rstrip('\n') for line in f.readlines()]
+    for input in args.input:
+        with open(input, 'r') as f:
+            fastas = [line.rstrip('\n') for line in f.readlines()]
 
-    # Filter down to only the fastas that we can find and issue warning about
-    # any we can't find
-    valid_fastas = [fasta for fasta in fastas if os.path.isfile(fasta)]
-    invalid_fastas = list(set(fastas).difference(set(valid_fastas)))
-    if len(invalid_fastas) > 0:
-        print("Warning: could not find the following fastas:")
-        print(invalid_fastas)
+        # Filter down to only the fastas that we can find and issue warning about
+        # any we can't find
+        valid_fastas = [fasta for fasta in fastas if os.path.isfile(fasta)]
+        invalid_fastas = list(set(fastas).difference(set(valid_fastas)))
+        if len(invalid_fastas) > 0:
+            print("Warning: could not find the following fastas:")
+            print(invalid_fastas)
 
-    # Initialize seen kmers here
-    if args.seen_kmers is None:
-        seen_kmers = set()
-    else:
-        print("Loading seen kmers")
-        seen_kmers = pickle.load(open(args.seen_kmers, "rb"))
+        # Initialize seen kmers here
+        if args.seen_kmers is None:
+            seen_kmers = set()
+        else:
+            print("Loading seen kmers")
+            seen_kmers = pickle.load(open(args.seen_kmers, "rb"))
 
-    # Iterate over fastas and deduplicate each one
-    for fasta in valid_fastas:
+        # Iterate over fastas and deduplicate each one
+        for fasta in valid_fastas:
 
-        # Deduplicate this fasta
-        print(f"Deduplicating {fasta}")
-        seen_kmers = deduplicate_genome(fasta, seen_kmers, args)
+            # Deduplicate this fasta
+            print(f"Deduplicating {fasta}")
+            seen_kmers = deduplicate_genome(fasta, seen_kmers, args)
 
 
 ###=============================================================================
@@ -394,7 +383,7 @@ def __main__():
 
     ## Collect input args
     parser = argparse.ArgumentParser()
-    parser.add_argument("input", help="Input list of FASTA files")
+    parser.add_argument("input", nargs="+", help="Input list of FASTA files")
     parser.add_argument("-k", "--kmer", type=int, default=32, help="Kmer size (default: 32)")
     parser.add_argument("-l", "--sample_len", type=int, default=1000, help="Sample length (default: 1000)")
     parser.add_argument("-m", "--min_sample_len", type=int, default=None, help="Minimum sample length (default: 50)")
@@ -404,7 +393,7 @@ def __main__():
     parser.add_argument("--no-overlap", action="store_true", help="Keep neighboring samples discrete rather than overlapping by k-1 bases")
     parser.add_argument("-seed", "--seed", type=int, default=123, help="Random seed for reproducibility")
     # Hidden test function -- pass in a file (.fa or .txt) here with expected results to verify correctness
-    parser.add_argument("-T", "--test", help=argparse.SUPPRESS)
+    parser.add_argument("-T", "--test", action="store_true", help=argparse.SUPPRESS)
     # Hidden test kmer set input for testing. If not included, will start with empty kmer set
     parser.add_argument("-I", "--test-input-kmers", type=str, help=argparse.SUPPRESS)
     parser.add_argument("-O", "--test-output-kmers", type=str, help=argparse.SUPPRESS)
@@ -412,9 +401,12 @@ def __main__():
 
     ## Process input args, checking for validity
 
+
     # Input fasta must be a valid file
-    if not os.path.isfile(args.input):
-        raise("Error: could not find supplied list of fasta files")
+    for f in args.input:
+        if not os.path.isfile(f):
+            raise("Error: could not find supplied list of fasta files")
+        type_check(f)
 
     # Kmer must be a positive number
     if args.kmer < 1:
@@ -449,27 +441,25 @@ def __main__():
     # Create output directory if it doesn't already exist
     if not os.path.isdir(args.output_dir):
         os.makedirs(args.output_dir, exist_ok=True)
-
-    # Test all input files are valid extension types
-    for n in args.input:
-        type_check(n)
-
     
     ## Run deduplication
+    print(args)
     if not args.test:
+        print("Running deduplication")
         deduplicate(args)
     else:
-        if args.input.endswith(".txt"):
-            with open(args.input, 'r') as f:
-                sequence = f.read().strip()
-            test_with_sequence(sequence, args.kmer, args.sample_len, None)
+        input=args.input[0]
+        if input.endswith(".txt"):
+            print("Testing with sequence")
+            test_with_sequence(args)
         else:
-            file_basename = args.input().split('.')[0]
+            print("Testing with fasta")
+            file_basename = input().split('.')[0]
             file_outputname=file_basename + ".pickle"
             input_kmers = pickle.load(open(args.test_input_kmers, "rb")) if args.test_input_kmers is not None else set()
             assert args.ouptput_kmers is not None, "Error: must provide output kmer file when testing"
             output_compare = pickle.load(open(args.output_kmers, "rb"))
-            test_with_fasta(args.input, args.kmer, args.sample_len, input_kmers)
+            test_with_fasta(input, args.kmer, args.sample_len, input_kmers)
             assert output_compare == pickle.load(file_outputname), "Error: output kmers do not match expected output"
 
 if __name__ == "__main__":
