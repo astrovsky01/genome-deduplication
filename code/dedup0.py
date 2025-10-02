@@ -67,6 +67,11 @@ def decode_kmer(kmer_num, k=32):
         kmer_num >>= 2
     return ''.join(reversed(kmer))
 
+def get_fasta_basename(fasta):
+    n_suffixes = 2 if fasta.endswith(".gz") else 1
+    fasta_basename = '.'.join(os.path.basename(fasta).split('.')[:-(n_suffixes)])
+    return fasta_basename
+
 def sample_scan(seq, start, end, k, seen_kmers, sample_seen_kmers, masked_starts, dedup_retain):
     """Scan a sample for kmers. If a duplicate is found either within the same set or globally, 
     return the index of the start of the duplicate kmer. If no duplicate is found, """
@@ -313,14 +318,13 @@ def deduplicate_seq(seq, seen_kmers, args):
 
 def deduplicate_genome(fasta, seen_kmers, args):
 
-    print("Here in deduplicate_genome()")
+    #print("Here in deduplicate_genome()")
 
     # Keep dict associating the regions with the sequence name
     local_dict = {}
 
     # Set output prefix
-    n_suffixes = 2 if fasta.endswith(".gz") else 1
-    fasta_basename = '.'.join(os.path.basename(fasta).split('.')[:-(n_suffixes)])
+    fasta_basename = get_fasta_basename(fasta)
     out_prefix = os.path.join(args.output_dir, fasta_basename)
 
     # Read in fasta
@@ -329,7 +333,7 @@ def deduplicate_genome(fasta, seen_kmers, args):
             sequence = str(record.seq)
             seqname = record.id
 
-            print(f"{seqname}: {len(sequence)} bp")
+            #print(f"{seqname}: {len(sequence)} bp")
 
             # Deduplicate this sequence
             sample_regions, masked_regions, skipped_regions, seen_kmers = deduplicate_seq(sequence, seen_kmers, args)
@@ -349,18 +353,18 @@ def deduplicate_genome(fasta, seen_kmers, args):
 
     writeout_kmers(seen_kmers, out_prefix)
 
-    print(f"Done with {fasta}")
+    #print(f"Done with {fasta}")
     return seen_kmers
 
 
 def deduplicate(args):
 
-    print("Here in deduplicate()")
+    #print("Here in deduplicate()")
     print(f"args: {args}")
 
     # Read input file of genome locations
-    for input in args.input:
-        with open(input, 'r') as f:
+    for input_file in args.input:
+        with open(input_file, 'r') as f:
             fastas = [line.rstrip('\n') for line in f.readlines()]
 
         # Filter down to only the fastas that we can find and issue warning about
@@ -370,6 +374,13 @@ def deduplicate(args):
         if len(invalid_fastas) > 0:
             print("Warning: could not find the following fastas:")
             print(invalid_fastas)
+
+        # Write basename to file map for all valid fastas
+        basename_fasta_file = os.path.join(args.output_dir, "basename_fasta_match.txt")
+        with open(basename_fasta_file, 'w') as f:
+            for fasta in valid_fastas:
+                fasta_basename = get_fasta_basename(fasta)
+                f.write(f"{fasta_basename}\t{fasta}\n")
 
         # Initialize seen kmers here
         if args.seen_kmers is None:
@@ -410,7 +421,6 @@ def __main__():
     args = parser.parse_args()
 
     ## Process input args, checking for validity
-
 
     # Input fasta must be a valid file
     for f in args.input:
