@@ -363,38 +363,42 @@ def deduplicate(args):
     print(f"args: {args}")
 
     # Read input file of genome locations
-    for input_file in args.input:
-        with open(input_file, 'r') as f:
+    # Single fasta input or series of individual fasta entries
+    if len(args.input) > 1 or args.input[0].endswith(('.fa', '.fasta', '.fasta.gz', '.fna', '.fna.gz')):
+        fastas = args.input
+    # File with a list of fasta files as input
+    elif len(args.input) == 1 and args.input[0].endswith(('.txt', '.list')):
+        with open(args.input[0], 'r') as f:
             fastas = [line.rstrip('\n') for line in f.readlines()]
 
-        # Filter down to only the fastas that we can find and issue warning about
-        # any we can't find
-        valid_fastas = [fasta for fasta in fastas if os.path.isfile(fasta)]
-        invalid_fastas = list(set(fastas).difference(set(valid_fastas)))
-        if len(invalid_fastas) > 0:
-            print("Warning: could not find the following fastas:")
-            print(invalid_fastas)
+    # Filter down to only the fastas that we can find and issue warning about
+    # any we can't find
+    valid_fastas = [fasta for fasta in fastas if os.path.isfile(fasta)]
+    invalid_fastas = list(set(fastas).difference(set(valid_fastas)))
+    if len(invalid_fastas) > 0:
+        print("Warning: could not find the following fastas:")
+        print(invalid_fastas)
 
-        # Write basename to file map for all valid fastas
-        basename_fasta_file = os.path.join(args.output_dir, "basename_fasta_match.txt")
-        with open(basename_fasta_file, 'w') as f:
-            for fasta in valid_fastas:
-                fasta_basename = get_fasta_basename(fasta)
-                f.write(f"{fasta_basename}\t{fasta}\n")
-
-        # Initialize seen kmers here
-        if args.seen_kmers is None:
-            seen_kmers = set()
-        else:
-            print("Loading seen kmers")
-            seen_kmers = pickle.load(open(args.seen_kmers, "rb"))
-
-        # Iterate over fastas and deduplicate each one
+    # Write basename to file map for all valid fastas
+    basename_fasta_file = os.path.join(args.output_dir, "basename_fasta_match.txt")
+    with open(basename_fasta_file, 'w') as f:
         for fasta in valid_fastas:
+            fasta_basename = get_fasta_basename(fasta)
+            f.write(f"{fasta_basename}\t{fasta}\n")
 
-            # Deduplicate this fasta
-            print(f"Deduplicating {fasta}")
-            seen_kmers = deduplicate_genome(fasta, seen_kmers, args)
+    # Initialize seen kmers here
+    if args.seen_kmers is None:
+        seen_kmers = set()
+    else:
+        print("Loading seen kmers")
+        seen_kmers = pickle.load(open(args.seen_kmers, "rb"))
+
+    # Iterate over fastas and deduplicate each one
+    for fasta in valid_fastas:
+
+        # Deduplicate this fasta
+        print(f"Deduplicating {fasta}")
+        seen_kmers = deduplicate_genome(fasta, seen_kmers, args)
 
 
 ###=============================================================================
@@ -404,7 +408,7 @@ def __main__():
 
     ## Collect input args
     parser = argparse.ArgumentParser()
-    parser.add_argument("input", nargs="+", help="Input list of FASTA files")
+    parser.add_argument("input", nargs="+", help="Input list of FASTA files or a txt file with one FASTA file per line")
     parser.add_argument("-k", "--kmer", type=int, default=32, help="Kmer size (default: 32)")
     parser.add_argument("-l", "--sample_len", type=int, default=1000, help="Sample length (default: 1000)")
     parser.add_argument("-m", "--min_sample_len", type=int, default=None, help="Minimum sample length (default: 50)")
@@ -426,7 +430,6 @@ def __main__():
     for f in args.input:
         if not os.path.isfile(f):
             raise("Error: could not find supplied list of fasta files")
-        type_check(f)
 
     # Kmer must be a positive number
     if args.kmer < 1:
@@ -470,6 +473,10 @@ def __main__():
     else:
         input=args.input[0]
         if input.endswith(".txt"):
+            with open(input) as f:
+                if f.readline().endswith(".fa\n") or f.readline().endswith(".fasta\n") or f.readline().endswith(".fna\n") or f.readline().endswith(".fa.gz\n") or f.readline().endswith(".fasta.gz\n") or f.readline().endswith(".fna.gz\n"):
+                    print("Testing with fasta")
+                    test_with_fasta(args)
             print("Testing with sequence")
             test_with_sequence(args)
         else:
