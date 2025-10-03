@@ -1,0 +1,8 @@
+1. All kmers in all samples are unique
+	- set(kmers(samples)) == list(kmers(samples))
+2. All elements of seen kmers are present exactly 1 time in the samples and vice versa
+	- set(kmers(samples)) == seen_kmers
+3. All kmers in the duplicate regions are present exactly 1 time in the samples
+	- set(kmers(masked regions)) = set(kmers(samples))
+4. Samples, masked regions, and ignored regions are fully disjoint
+5. Samples, masked regions, and ignored regions combine to form the original sequences. i.e. every base is in 1 of the 3
