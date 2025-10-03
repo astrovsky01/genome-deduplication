@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # Input arg
-data_folder=tests/out/small_input
+data_folder=$1
 
 # Global args
 dev_pct=0.1
@@ -25,12 +25,12 @@ for sample_bed in $sample_beds; do
 
 	# Get training/dev beds/txts for each sample bed
 	echo "Partitioning samples"
-	./code/partition_samples.sh $sample_bed $dev_pct $max_dev_samples
+	./code/partition_samples.sh $sample_bed $dev_pct $max_dev_samples $shuf_seed
 	echo "Getting sequences"
 	./code/get_sample_seqs.sh $sample_fasta $dev_sample_bed $train_sample_bed
 
 done
 
 ## Group all sample train/dev files into global ones for the directory
-#python code/aggregate_samples.py $data_folder $shuf_seed
+python code/aggregate_samples.py $data_folder $shuf_seed
 
