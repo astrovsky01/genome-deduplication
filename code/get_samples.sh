@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+
 # Input arg
 data_folder=$1
 
@@ -7,6 +8,42 @@ data_folder=$1
 dev_pct=0.1
 max_dev_samples=100
 shuf_seed=123
+
+
+while getopts ":i:p:m:s:" opt; do
+    case $opt in
+        i)
+            data_folder="$OPTARG"
+            ;;
+        p)
+            dev_pct="$OPTARG"
+            ;;
+        m)
+            max_dev_samples="$OPTARG"
+            ;;
+        s)
+            shuf_seed="$OPTARG"
+            ;;
+        \?)
+            echo "Invalid option: -$OPTARG" >&2
+            echo "Usage: $0 -i input_folder -p output_folder -m max_dev_samples -s seed"
+            exit 1
+            ;;
+        :)
+            echo "Option -$OPTARG requires an argument." >&2
+            echo "Usage: $0 -i input_folder -p output_folder -m max_dev_samples -s seed"
+            exit 1
+            ;;
+    esac
+done
+
+# Check if all required arguments are provided and not empty
+if [ -z "$data_folder" ] || [ -z "$dev_pct" ] || [ -z "$max_dev_samples" ] || [ -z "$shuf_seed" ]; then
+    echo "Error: All arguments (-i, -p, -m, -s) are required and cannot be empty."
+    echo "Usage: $0 -i input_folder -p output_folder -m max_dev_samples -s seed"
+    exit 1
+fi
+
 
 ## Create train/dev txt files for each sample in the input directory
 
