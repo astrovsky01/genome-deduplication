@@ -1,0 +1,3 @@
+tests/test-data/dummy_1.fa
+tests/test-data/dummy_2.fa
+tests/test-data/dummy_3.fa
