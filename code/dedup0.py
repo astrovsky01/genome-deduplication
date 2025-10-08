@@ -316,7 +316,7 @@ def deduplicate_seq(seq, seen_kmers, args):
     return sample_regions, masked_regions, skipped_regions, seen_kmers
 
 
-def deduplicate_genome(fasta, seen_kmers, args):
+def deduplicate_genome(fasta, seen_kmers, save_kmers_to_file, args):
 
     #print("Here in deduplicate_genome()")
 
@@ -351,7 +351,8 @@ def deduplicate_genome(fasta, seen_kmers, args):
 
         output_dump(local_dict, out_prefix, args.kmer)
 
-    writeout_kmers(seen_kmers, out_prefix)
+    if save_kmers_to_file:
+        writeout_kmers(seen_kmers, out_prefix)
 
     #print(f"Done with {fasta}")
     return seen_kmers
@@ -394,11 +395,21 @@ def deduplicate(args):
         seen_kmers = pickle.load(open(args.seen_kmers, "rb"))
 
     # Iterate over fastas and deduplicate each one
-    for fasta in valid_fastas:
+    for i,fasta in enumerate(valid_fastas):
 
         # Deduplicate this fasta
         print(f"Deduplicating {fasta}")
-        seen_kmers = deduplicate_genome(fasta, seen_kmers, args)
+        save_kmers_to_file = args.save_every > 0 and (i+1) % args.save_every == 0
+        seen_kmers = deduplicate_genome(fasta, seen_kmers, save_kmers_to_file, args)
+
+    # Optionally save seen kmers at the end
+    if not args.no_save_kmers_at_end:
+        final_seen_kmer_file_basename = "final"
+        idx_suffix = 1
+        while os.path.exists(os.path.join(args.output_dir, f"{final_seen_kmer_file_basename}.kmers.pkl")):
+            final_seen_kmer_file_basename = f"final_{idx_suffix}"
+            idx_suffix += 1
+        writeout_kmers(seen_kmers, os.path.join(args.output_dir, final_seen_kmer_file_basename))
 
 
 ###=============================================================================
@@ -415,7 +426,9 @@ def __main__():
     parser.add_argument("-o", "--output_dir", default="dedup_out", help="Output directory (default: dedup_out/)")
     parser.add_argument("-p", "--seen_kmers", default=None, help="Pickle file containing seen kmers (default: None)")
     parser.add_argument("-r", "--retain", type=float, default=0.0, help="Likelihood a duplicate kmer will be allowed through as a value from [0,1]")
+    parser.add_argument("-s", "--save_every", type=int, default=0, help="Save seen kmer set every n samples (default: 0, don't save any before the end)")
     parser.add_argument("--no-overlap", action="store_true", help="Keep neighboring samples discrete rather than overlapping by k-1 bases")
+    parser.add_argument("--no-save-kmers-at-end", action="store_true", help="Opt out of saving the seen kmer set at the end of program execution")
     parser.add_argument("-seed", "--seed", type=int, default=123, help="Random seed for reproducibility")
     # Hidden test function -- pass in a file (.fa or .txt) here with expected results to verify correctness
     parser.add_argument("-T", "--test", action="store_true", help=argparse.SUPPRESS)
@@ -464,6 +477,9 @@ def __main__():
     # Create output directory if it doesn't already exist
     if not os.path.isdir(args.output_dir):
         os.makedirs(args.output_dir, exist_ok=True)
+
+    # Save (processed) input args to file for reproducibility
+
     
     ## Run deduplication
     print(args)
