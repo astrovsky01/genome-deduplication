@@ -41,6 +41,7 @@
 import argparse
 from Bio import SeqIO
 import gzip
+import json
 import pickle
 import os
 import random as rng
@@ -478,8 +479,9 @@ def __main__():
     if not os.path.isdir(args.output_dir):
         os.makedirs(args.output_dir, exist_ok=True)
 
-    # Save (processed) input args to file for reproducibility
-
+    # Write (processed) input args to file for reproducibility
+    with open(os.path.join(args.output_dir, "config.json"), 'w') as f:
+        json.dump(vars(args), f, indent=4)
     
     ## Run deduplication
     print(args)
