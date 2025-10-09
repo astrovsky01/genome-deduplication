@@ -118,7 +118,7 @@ def check_sample(seq, seen_kmers, k, allowed_duplicate_rate):
                 continue
 
             # Handle finding a repeat
-            sample_end = kmer_start_idx
+            # sample_end = kmer_start_idx
             return sample_seen_kmers, kmer_start_idx
 
     return sample_seen_kmers, -1
@@ -182,10 +182,12 @@ def output_dump(local_dict, file_basename, k):
     with open(file_basename + ".samples.bed", 'w') as sample_regions:
         with open(file_basename + ".masks.bed", 'w') as masked_regions:
             with open(file_basename + ".ignored.bed", 'w') as skipped_regions:
-                for seqname in local_dict.keys():
-                    writeout_bed(seqname, local_dict[seqname]["sample_regions"], sample_regions)
-                    writeout_bed(seqname, local_dict[seqname]["masked_regions"], masked_regions)
-                    writeout_bed(seqname, local_dict[seqname]["skipped_regions"], skipped_regions)
+                with open(file_basename + ".ambiguous.bed", 'w') as ambiguous_regions:
+                    for seqname in local_dict.keys():
+                        writeout_bed(seqname, local_dict[seqname]["sample_regions"], sample_regions)
+                        writeout_bed(seqname, local_dict[seqname]["masked_regions"], masked_regions)
+                        writeout_bed(seqname, local_dict[seqname]["skipped_regions"], skipped_regions)
+                        writeout_bed(seqname, local_dict[seqname]["ambiguous_regions"], ambiguous_regions)
 
 ## Testing Functions ================
 
@@ -248,6 +250,7 @@ def deduplicate_seq(seq, seen_kmers, args):
     sample_regions = []
     masked_starts = []
     skipped_regions = []
+    ambiguous_positions = []
 
     # Check validity of inputs
     if min_sample_len is not None and len(seq) < min_sample_len:
@@ -260,20 +263,23 @@ def deduplicate_seq(seq, seen_kmers, args):
     ## Deduplication ========
 
     # Needed global vars
-    max_start_idx = len(seq) - sample_len # final possible start index
+    max_start_idx = len(seq) - min_sample_len # final possible start index
     sample_start = 0 # start index of the current sample
 
     # Investigate every possible sample
     while sample_start <= max_start_idx:
 
         # Get boundary for this possible sample
-        sample_end = sample_start + sample_len
+        sample_end = min(len(seq), sample_start + sample_len) # Checking against seq len is only necessary for final sample
+
         # # Check for Ns
         N_index = seq[sample_start:sample_end].find('N')
         # If we find an N
         if N_index > -1:
             # If the first N occurs before the minimum sample length, there's no valid sample here; skip ahead
             if N_index < min_sample_len:
+                # Record position of the N in the list of ambiguous characters
+                ambiguous_positions.append(sample_start + N_index)
                 # Record entire region before the N as skipped
                 if N_index > 0:
                     skipped_regions.append((sample_start, sample_start+N_index))
@@ -296,10 +302,22 @@ def deduplicate_seq(seq, seen_kmers, args):
             seen_kmers.update(sample_seen_kmers)
             sample_start = sample_end if no_overlap_samples else sample_end - k + 1
 
-        # If we did find a duplicate:
+        # If we find a duplicate after min_sample_len:
+        # 1. Save the maximum extend of this sample as a valid sample
+        # 2. Add all kmers from this sample to the global set
+        # 3. Record the duplicate start idx in masked regions
+        # 4. Set the next sample start to be the position of the duplicate kmer + 1
+        elif first_repeat_idx >= min_sample_len:
+            adj_first_repeat_idx = sample_start + first_repeat_idx
+            sample_regions.append((sample_start, adj_first_repeat_idx))
+            seen_kmers.update(sample_seen_kmers)
+            masked_starts.append(adj_first_repeat_idx)
+            sample_start = adj_first_repeat_idx + 1
+
+        # If we find a duplicate before min_sample_len:
         # 1. Add the region from sample start to the duplicate start to the skipped region list
         # 2. Record the duplicate start idx in masked regions
-        # 3. Set the next sample start to be 1 + the start position of the duplicate
+        # 3. Set the next sample start to be the position of the duplicate kmer + 1
         else:
             adj_first_repeat_idx = sample_start + first_repeat_idx
             if adj_first_repeat_idx > sample_start:
@@ -311,10 +329,11 @@ def deduplicate_seq(seq, seen_kmers, args):
     if sample_start < len(seq):
         skipped_regions.append((sample_start, len(seq)))
 
-    # Convert from a list of mask starting indices to masked regions
+    # Convert masked starting indices and ambiguous positions to regions for more condensed bed files
     masked_regions = condense_masked_regions(masked_starts)
+    ambiguous_regions = condense_masked_regions(ambiguous_positions)
 
-    return sample_regions, masked_regions, skipped_regions, seen_kmers
+    return sample_regions, masked_regions, skipped_regions, ambiguous_regions, seen_kmers
 
 
 def deduplicate_genome(fasta, seen_kmers, save_kmers_to_file, args):
@@ -337,7 +356,7 @@ def deduplicate_genome(fasta, seen_kmers, save_kmers_to_file, args):
             #print(f"{seqname}: {len(sequence)} bp")
 
             # Deduplicate this sequence
-            sample_regions, masked_regions, skipped_regions, seen_kmers = deduplicate_seq(sequence, seen_kmers, args)
+            sample_regions, masked_regions, skipped_regions, ambiguous_regions, seen_kmers = deduplicate_seq(sequence, seen_kmers, args)
 
             #print(f"Sample regions: {sample_regions}")
             #print(f"Masked regions: {masked_regions}")
@@ -348,6 +367,7 @@ def deduplicate_genome(fasta, seen_kmers, save_kmers_to_file, args):
                 "sample_regions": sample_regions,
                 "masked_regions": masked_regions,
                 "skipped_regions": skipped_regions,
+                "ambiguous_regions": ambiguous_regions
             }
 
         output_dump(local_dict, out_prefix, args.kmer)
