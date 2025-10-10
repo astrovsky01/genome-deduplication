@@ -65,13 +65,4 @@ for sample_bed in $sample_beds; do
 	echo "Partitioning samples"
 	./code/partition_samples.sh $sample_bed $dev_pct $max_dev_samples $shuf_seed
 done
-
-if [[ $(echo $sample_beds | wc -w) -eq 1 ]]; then
-    ./code/get_sample_seqs.sh $sample_fasta $dev_sample_bed $train_sample_bed
-    python shuffle.py $dev_sample_bed $shuf_seed $basename.samples.dev.bed.shuf
-    python shuffle.py $train_sample_bed $shuf_seed $basename.samples.train.bed.shuf
-    bedtools getfasta -fi $sample_fasta -bed $basename.samples.dev.bed.shuf -tab | cut -f2 > $basename.samples.dev.txt
-    bedtools getfasta -fi $sample_fasta -bed $basename.samples.train.bed.shuf -tab | cut -f2 > $basename.samples.train.txt
-else
-    sh aggregate_and_track_samples.sh $data_folder $shuf_seed 
-fi
+sh ./code/aggregate_and_track_samples.sh $data_folder $shuf_seed 

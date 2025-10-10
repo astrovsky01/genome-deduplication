@@ -1,11 +1,9 @@
 #!/usr/bin/env bash
 
-# Usage: ./code/get_sample_seqs.sh [fasta] [beds...]
-# e.g.:  ./code/get_sample_seqs.sh human.fa human.dev.bed human.train.bed
 # Produces a corresponding txt file for each input bed
 # e.g. for the above example, produces human.dev.txt and human.train.txt
 
-module load bedtools
+# module load bedtools  # Comment out if not on HPC system
 
 #in_bed=tests/out/dummy/dummy_1.samples.bed
 #in_fa=tests/test-data/dummy_1.fa
@@ -34,38 +32,55 @@ while IFS=$'\t' read -r var_name var_value; do
     declare "$clean_var_name=$var_value"
 done < ${in_dir}/basename_fasta_match.txt
 
-
-# Create combined train and test bed files with labeled origins
+#For each file, getfasta, then pipe that txt to a bedfile with [chrom, start, end, sample_id, sequence]
 for file in $train_files; do
     file_basename=$(basename "$file" .samples.train.bed)
-    cat "$file" | awk -v fname="$file_basename" '{print $0 "\t" fname}' >> $train_bed
+    clean_sample_id="${file_basename//\./_}"
+    fasta_file="${!clean_sample_id}"  # Get actual fasta file from name
+    temp_bed=$(mktemp)
+    if [[ "$fasta_file" == *.gz ]]; then
+        temp_fasta=$(mktemp -t temp_fasta.XXXXXX).fa
+        gzcat "$fasta_file" > "$temp_fasta"
+        bedtools getfasta -fi "$temp_fasta" -bed "$file" -tab > $temp_bed
+        rm "$temp_fasta"
+    else
+        bedtools getfasta -fi "$fasta_file" -bed "$file" -tab > $temp_bed
+    fi
+    while IFS=$'\t' read -r coord sequence; do
+        echo "$coord" | awk -F':|-' -v fasta_file="$fasta_file" -v sample_id="$file_basename" -v seq="$sequence" '{print $1 "\t" $2 "\t" $3 "\t" fasta_file "\t" sample_id "\t" seq}' >> $train_bed
+    done < "$temp_bed"
+    rm "$temp_bed"
 done
-python code/shuffle.py $train_bed $random_seed $train_bed.shuf
+
 for file in $dev_files; do
     file_basename=$(basename "$file" .samples.dev.bed)
-    cat "$file" | awk -v fname="$file_basename" '{print $0 "\t" fname}' >> $dev_bed
-done
-python code/shuffle.py $dev_bed $random_seed $dev_bed.shuf
-
-while IFS=$'\t' read -r chr start end sample_id; do
-    # Convert dots to underscores to match declared variable names
-    clean_sample_id="${sample_id//\./_}"
+    clean_sample_id="${file_basename//\./_}"
     fasta_file="${!clean_sample_id}"  # Get actual fasta file from name
+    temp_bed=$(mktemp)
     if [[ "$fasta_file" == *.gz ]]; then
-        echo -e "$chr\t$start\t$end" | bedtools getfasta -fi <(zcat "$fasta_file") -bed - -tab | cut -f2
+        temp_fasta=$(mktemp -t temp_fasta.XXXXXX).fa
+        gzcat "$fasta_file" > "$temp_fasta"
+        bedtools getfasta -fi "$temp_fasta" -bed "$file" -tab > $temp_bed
+        rm "$temp_fasta"
     else
-        echo -e "$chr\t$start\t$end" | bedtools getfasta -fi "$fasta_file" -bed - -tab | cut -f2
+        bedtools getfasta -fi "$fasta_file" -bed "$file" -tab > $temp_bed
     fi
-done < "$train_bed" >> "${train_txt}"
+    while IFS=$'\t' read -r coord sequence; do
+        echo "$coord" | awk -F':|-' -v fasta_file="$fasta_file" -v sample_id="$file_basename" -v seq="$sequence" '{print $1 "\t" $2 "\t" $3 "\t" fasta_file "\t" sample_id "\t" seq}' >> $dev_bed
+    done < "$temp_bed"
+    rm "$temp_bed"
+done
 
+#Now shuffle the train and dev bed files
+python ./code/shuffle.py $train_bed $random_seed ${train_bed}.shuf
+python ./code/shuffle.py $dev_bed $random_seed ${dev_bed}.shuf
+mv ${train_bed}.shuf $train_bed
+mv ${dev_bed}.shuf $dev_bed
 
-while IFS=$'\t' read -r chr start end sample_id; do
-    # Convert dots to underscores to match declared variable names
-    clean_sample_id="${sample_id//\./_}"
-    fasta_file="${!clean_sample_id}"
-    if [[ "$fasta_file" == *.gz ]]; then
-        echo -e "$chr\t$start\t$end" | bedtools getfasta -fi <(zcat "$fasta_file") -bed - -tab | cut -f2
-    else
-        echo -e "$chr\t$start\t$end" | bedtools getfasta -fi "$fasta_file" -bed - -tab | cut -f2
-    fi
-done < "$dev_bed" >> "${dev_txt}"
+#Now separate columns 12,3,and 5 to bed files and 6 to txt file
+cut -f6 $train_bed > ${train_txt}
+cut -f6 $dev_bed > ${dev_txt}
+cut -f1,2,3,5 $train_bed > ${train_bed}.tmp
+mv ${train_bed}.tmp $train_bed
+cut -f1,2,3,5 $dev_bed > ${dev_bed}.tmp
+mv ${dev_bed}.tmp $dev_bed
