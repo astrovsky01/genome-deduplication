@@ -12,22 +12,19 @@ sample_bed=$1
 dev_pct=$2
 max_dev_samples=$3
 random_seed=$4
-
 # Get number of samples in this file
-n_samples=$(wc -l $sample_bed | cut -d' ' -f1)
-
+n_samples=$(wc -l $sample_bed)
+n_samples=$(echo $n_samples | cut -d' ' -f1)
 # Get the number of dev samples based on the dev_pct
 n_dev_samples=$(echo "$n_samples * $dev_pct" | bc -l)
 n_dev_samples=$(echo "$n_dev_samples/1" | bc)
-
 # Make sure the dev sample count doesn't exceed the max dev samples count
 if [[ $n_dev_samples -gt $max_dev_samples ]]; then
 	n_dev_samples=$max_dev_samples
 fi
 
 # Get filename up to the suffix (.samples.bed)
-file_basename=$(echo "${sample_bed::-12}")
-
+file_basename="${sample_bed%.samples.bed}"
 # Shuffle file to temporary file
 shuf_file=${file_basename}.shuf.samples.bed
 python code/shuffle.py $sample_bed $random_seed $shuf_file
