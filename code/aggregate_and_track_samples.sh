@@ -3,6 +3,15 @@
 # Produces a corresponding txt file for each input bed
 # e.g. for the above example, produces human.dev.txt and human.train.txt
 
+# Detect OS and set appropriate decompression command
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    # macOS
+    ZCAT_CMD="gzcat"
+else
+    # Linux and others
+    ZCAT_CMD="zcat"
+fi
+
 # module load bedtools  # Comment out if not on HPC system
 
 #in_bed=tests/out/dummy/dummy_1.samples.bed
@@ -40,7 +49,7 @@ for file in $train_files; do
     temp_bed=$(mktemp)
     if [[ "$fasta_file" == *.gz ]]; then
         temp_fasta=$(mktemp -t temp_fasta.XXXXXX).fa
-        gzcat "$fasta_file" > "$temp_fasta"
+        $ZCAT_CMD "$fasta_file" > "$temp_fasta"
         bedtools getfasta -fi "$temp_fasta" -bed "$file" -tab > $temp_bed
         rm "$temp_fasta"
     else
@@ -59,7 +68,7 @@ for file in $dev_files; do
     temp_bed=$(mktemp)
     if [[ "$fasta_file" == *.gz ]]; then
         temp_fasta=$(mktemp -t temp_fasta.XXXXXX).fa
-        gzcat "$fasta_file" > "$temp_fasta"
+        $ZCAT_CMD "$fasta_file" > "$temp_fasta"
         bedtools getfasta -fi "$temp_fasta" -bed "$file" -tab > $temp_bed
         rm "$temp_fasta"
     else
