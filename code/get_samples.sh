@@ -65,4 +65,4 @@ for sample_bed in $sample_beds; do
 	echo "Partitioning samples"
 	./code/partition_samples.sh $sample_bed $dev_pct $max_dev_samples $shuf_seed
 done
-sh ./code/aggregate_and_track_samples.sh $data_folder $shuf_seed 
+./code/aggregate_and_track_samples.sh $data_folder $shuf_seed 
