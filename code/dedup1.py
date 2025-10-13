@@ -45,6 +45,7 @@ import json
 import pickle
 import os
 import random as rng
+import re
 
 
 ###=============================================================================
@@ -94,34 +95,78 @@ def sample_scan(seq, start, end, k, seen_kmers, sample_seen_kmers, masked_starts
     return sample_seen_kmers, masked_starts, False, end
 
 # Function to check a sample for duplicates, allowing some rate of duplicates
-def check_sample(seq, seen_kmers, k, allowed_duplicate_rate):
-    """Allow all kmers to allow through at a fixed rate even if they are duplicates."""
-    # Data structure for new kmers in this sample - see note above
+def check_sample(seq, seen_kmers, k, allowed_duplicate_rate, min_sample_len, no_overlap_samples, N_policy="allow_none"):
+
+    ## Initialize all data structures returned by this function
+
+    # Data structure for new kmers in this sample
     sample_seen_kmers = set()
     
+    # Sequence attributes
+    sample_end_coord = len(seq)
+    duplicate_start_idx = -1
+    ambiguous_idx = -1
+    ignored_region = None
+    next_start_offset = len(seq) if no_overlap_samples else len(seq) - k + 1
+    
+    # # Check for Ns
+    if N_policy == "allow_none":
+        N_index = seq.find('N')
+        # If we find an N
+        if N_index > -1:
+            # If the first N occurs before the minimum sample length, there's no valid sample here; handle like a failed sample
+            if N_index < min_sample_len:
+                # Record position of the N in the list of ambiguous characters
+                ambiguous_idx = N_index
+                # Record entire region before the N as skipped
+                if N_index > 0:
+                    ignored_region = (0, N_index)
+                next_start_offset = N_index + 1
+                sample_end_coord = -1
+            else:
+                # Set N index to be the end of this possible sample
+                sample_end_coord = N_index
+
     # Loop through all kmers in this possible sample
-    for kmer_start_idx in range(len(seq)-k+1):
+    if sample_end_coord >= min_sample_len:
+        for kmer_start_idx in range(sample_end_coord-k+1):
 
-        # Get kmer and its encoding for storage
-        kmer = seq[kmer_start_idx:kmer_start_idx+k]
-        kmer_num = encode_kmer(kmer)
+            # Get kmer and its encoding for storage
+            kmer = seq[kmer_start_idx:kmer_start_idx+k]
+            kmer_num = encode_kmer(kmer)
 
-        # If we haven't seen this kmer before, record it in the sample kmers
-        if kmer_num not in seen_kmers and kmer_num not in sample_seen_kmers:
-            sample_seen_kmers.add(kmer_num)
+            # If we haven't seen this kmer before, record it in the sample kmers
+            if kmer_num not in seen_kmers and kmer_num not in sample_seen_kmers:
+                sample_seen_kmers.add(kmer_num)
 
-        # If we've seen this kmer before, stop analyzing this sample
-        else:
+            # If we've seen this kmer before, stop analyzing this sample
+            else:
 
-            # Stochasticity is built in here here; if random() < allowed duplicate rate, let through this duplicate
-            if allowed_duplicate_rate > 0 and rng.random() < allowed_duplicate_rate:
-                continue
+                # Opportunity to process this duplicate with some function to determine whether to ignore it
+                # Simple chance, function based on previous occurrence count, etc.
+                if allowed_duplicate_rate > 0 and rng.random() < allowed_duplicate_rate:
+                    continue
 
-            # Handle finding a repeat
-            # sample_end = kmer_start_idx
-            return sample_seen_kmers, kmer_start_idx
+                # At this point, we have found a definite duplication
 
-    return sample_seen_kmers, -1
+                # If the duplicate is after the min_sample_len, we still have a valid sample
+                if kmer_start_idx >= min_sample_len:
+                    sample_end_coord = kmer_start_idx
+                    duplicate_start_idx = kmer_start_idx
+                    next_start_offset = kmer_start_idx + 1
+
+                # If the duplicate is before the min_sample_len, we failed to find a valid sample
+                else:
+                    sample_end_coord = -1
+                    duplicate_start_idx = kmer_start_idx
+                    if kmer_start_idx > 0:
+                        ignored_region = (0, duplicate_start_idx) # Is this necessary? Could be handled in outer loop
+                    next_start_offset = duplicate_start_idx + 1
+                    sample_seen_kmers = None
+                
+                break
+
+    return sample_end_coord, duplicate_start_idx, ambiguous_idx, ignored_region, next_start_offset, sample_seen_kmers
 
 # Group masked indices into contiguous bed regions
 # e.g. [2,3,4,7,8,20] -> [(2,5), (7,9), (20,21)]
@@ -255,10 +300,10 @@ def deduplicate_seq(seq, seen_kmers, args):
     # Check validity of inputs
     if min_sample_len is not None and len(seq) < min_sample_len:
         print("Warning: the sequence length is less than min_sample_len. Skipping this sequence.")
-        return sample_regions, masked_starts, skipped_regions, seen_kmers
+        return [], [], [(0,len(seq))], [], seen_kmers 
     if min_sample_len is None and len(seq) < sample_len:
         print("Warning: the sequence length is less than sample_len. Skipping this sequence.")
-        return sample_regions, masked_starts, skipped_regions, seen_kmers
+        return [], [], [(0,len(seq))], [], seen_kmers 
 
     ## Deduplication ========
 
@@ -272,58 +317,36 @@ def deduplicate_seq(seq, seen_kmers, args):
         # Get boundary for this possible sample
         sample_end = min(len(seq), sample_start + sample_len) # Checking against seq len is only necessary for final sample
 
-        # # Check for Ns
-        N_index = seq[sample_start:sample_end].find('N')
-        # If we find an N
-        if N_index > -1:
-            # If the first N occurs before the minimum sample length, there's no valid sample here; skip ahead
-            if N_index < min_sample_len:
-                # Record position of the N in the list of ambiguous characters
-                ambiguous_positions.append(sample_start + N_index)
-                # Record entire region before the N as skipped
-                if N_index > 0:
-                    skipped_regions.append((sample_start, sample_start+N_index))
-                sample_start = sample_start + N_index + 1
-                skipped_ahead = True
-                continue
-            # If the first N occurs after the minimum sample length, set the N to be the sample end and continue on to check for the validity of this sample
-            else:
-                sample_end = sample_start + N_index
-
         # Check this sample
-        sample_seen_kmers, first_repeat_idx = check_sample(seq[sample_start:sample_end], seen_kmers, k, allowed_duplicate_rate)
+        #checked_sample_len, duplicate_start_idx, next_start_offset, ignored_region, sample_seen_kmers = \
+        checked_sample_len, duplicate_start_idx, ambiguous_idx, ignored_region, next_start_offset, sample_seen_kmers = \
+                check_sample(seq[sample_start:sample_end], seen_kmers, k, allowed_duplicate_rate, min_sample_len, no_overlap_samples)
 
-        # If we didn't find any duplicates:
-        # 1. Save the coordinates of this sample as a valid sample
-        # 2. Add all kmers from this sample to the global set
-        # 3. Set the next sample start based on whether no_overlap is true
-        if first_repeat_idx < 0:
-            sample_regions.append((sample_start, sample_end))
+        #if verbose:
+        #    print(f"{sample_start}: checked_sample_len={checked_sample_len}, duplicate_start_idx={duplicate_start_idx}, next_start_offset={next_start_offset}, ignored_region={ignored_region}")
+
+        # Add sample to samples if valid
+        if checked_sample_len > -1:
+            sample_regions.append((sample_start, sample_start + checked_sample_len))
+        
+        # Record the duplicate if any was found
+        if duplicate_start_idx > -1:
+            masked_starts.append(sample_start + duplicate_start_idx)
+
+        # Record the ambiguous index if any was found
+        if ambiguous_idx > -1:
+            ambiguous_positions.append(sample_start + ambiguous_idx)
+
+        # Add ignored region if any was found
+        if ignored_region is not None:
+            skipped_regions.append((sample_start+ignored_region[0], sample_start+ignored_region[1]))
+
+        # Update seen kmers with any sample-specific kmers
+        if sample_seen_kmers is not None:
             seen_kmers.update(sample_seen_kmers)
-            sample_start = sample_end if no_overlap_samples else sample_end - k + 1
 
-        # If we find a duplicate after min_sample_len:
-        # 1. Save the maximum extend of this sample as a valid sample
-        # 2. Add all kmers from this sample to the global set
-        # 3. Record the duplicate start idx in masked regions
-        # 4. Set the next sample start to be the position of the duplicate kmer + 1
-        elif first_repeat_idx >= min_sample_len:
-            adj_first_repeat_idx = sample_start + first_repeat_idx
-            sample_regions.append((sample_start, adj_first_repeat_idx))
-            seen_kmers.update(sample_seen_kmers)
-            masked_starts.append(adj_first_repeat_idx)
-            sample_start = adj_first_repeat_idx + 1
-
-        # If we find a duplicate before min_sample_len:
-        # 1. Add the region from sample start to the duplicate start to the skipped region list
-        # 2. Record the duplicate start idx in masked regions
-        # 3. Set the next sample start to be the position of the duplicate kmer + 1
-        else:
-            adj_first_repeat_idx = sample_start + first_repeat_idx
-            if adj_first_repeat_idx > sample_start:
-                skipped_regions.append((sample_start, adj_first_repeat_idx))
-            masked_starts.append(adj_first_repeat_idx)
-            sample_start = adj_first_repeat_idx + 1
+        # Set start index of next iteration of the loop
+        sample_start = sample_start + next_start_offset
 
     # Handle possible skipped sequence at the end
     if sample_start < len(seq):
@@ -353,10 +376,14 @@ def deduplicate_genome(fasta, seen_kmers, save_kmers_to_file, args):
             sequence = str(record.seq)
             seqname = record.id
 
+            # Convert all chars to uppercase and replace ambiguous chars with N
+            ambiguous_chars_regex = re.compile(r'[^ACGTN]')
+            clean_sequence = ambiguous_chars_regex.sub('N', str(sequence.upper()))
+
             #print(f"{seqname}: {len(sequence)} bp")
 
             # Deduplicate this sequence
-            sample_regions, masked_regions, skipped_regions, ambiguous_regions, seen_kmers = deduplicate_seq(sequence, seen_kmers, args)
+            sample_regions, masked_regions, skipped_regions, ambiguous_regions, seen_kmers = deduplicate_seq(clean_sequence, seen_kmers, args)
 
             #print(f"Sample regions: {sample_regions}")
             #print(f"Masked regions: {masked_regions}")
