@@ -189,8 +189,8 @@ def check_sample(seq, seen_kmers, k, allowed_duplicate_rate, min_sample_len, no_
 
                         # Record the entire region up to and including the original kmer as ignored
                         # Importantly, we do not denote the original kmer as a duplicate, since it is both not in the global set and is not added to a sample
-                        if repeat_match_idx > 0:
-                            ignored_region = (0, next_start_offset)
+                        #if repeat_match_idx > 0:
+                        ignored_region = (0, next_start_offset)
 
                     # Else if a match to a global kmer
                     else:
