@@ -477,6 +477,12 @@ def deduplicate(args):
     #print("Here in deduplicate()")
     print(f"args: {args}")
 
+    if os.path.isdir(args.output_dir):
+        delete_check=input("Output directory already exists. Continue and potentially overwrite files? (y/n): ")
+        if delete_check.lower() != 'y' and delete_check.lower() != 'yes':
+           print("Exiting...")
+           sys.exit(1)
+
     # Read input file of genome locations
     # Single fasta input or series of individual fasta entries
     if len(args.input) > 1 or args.input[0].endswith(('.fa', '.fasta', '.fasta.gz', '.fna', '.fna.gz')):
