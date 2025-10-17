@@ -476,12 +476,19 @@ def deduplicate(args):
 
     #print("Here in deduplicate()")
     print(f"args: {args}")
-
-    if os.path.isdir(args.output_dir):
+    
+    # Create output directory if it doesn't already exist
+    if not os.path.isdir(args.output_dir):
+        os.makedirs(args.output_dir, exist_ok=True)
+    else:
         delete_check=input("Output directory already exists. Continue and potentially overwrite files? (y/n): ")
         if delete_check.lower() != 'y' and delete_check.lower() != 'yes':
            print("Exiting...")
            sys.exit(1)
+
+    # Write (processed) input args to file for reproducibility
+    with open(os.path.join(args.output_dir, "config.json"), 'w') as f:
+        json.dump(vars(args), f, indent=4)
 
     # Read input file of genome locations
     # Single fasta input or series of individual fasta entries
@@ -596,14 +603,6 @@ def __main__():
     if args.kmer < 16:
         print("Warning: small kmer sizes will result in very strict deduplication. Consider increasing the kmer size")
 
-    # Create output directory if it doesn't already exist
-    if not os.path.isdir(args.output_dir):
-        os.makedirs(args.output_dir, exist_ok=True)
-
-    # Write (processed) input args to file for reproducibility
-    with open(os.path.join(args.output_dir, "config.json"), 'w') as f:
-        json.dump(vars(args), f, indent=4)
-    
     ## Run deduplication
     print(args)
     if not args.test:
