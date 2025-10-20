@@ -26,12 +26,12 @@ while getopts ":i:p:m:s:" opt; do
             ;;
         \?)
             echo "Invalid option: -$OPTARG" >&2
-            echo "Usage: $0 -i input_folder -p output_folder -m max_dev_samples -s seed"
+            echo "Usage: $0 -i input_folder -p dev_pct -m max_dev_samples -s seed"
             exit 1
             ;;
         :)
             echo "Option -$OPTARG requires an argument." >&2
-            echo "Usage: $0 -i input_folder -p output_folder -m max_dev_samples -s seed"
+            echo "Usage: $0 -i input_folder -p dev_pct -m max_dev_samples -s seed"
             exit 1
             ;;
     esac
@@ -74,7 +74,6 @@ for sample_bed in $sample_beds; do
 	
 	# Get all needed file names
 	basename=$(basename $sample_bed | rev | cut -d'.' -f3- | rev)
-	echo $basename
 	sample_fasta=$(grep "^${basename}" ${data_folder}/basename_fasta_match.txt | cut -f2) # query corresponding fasta for this sample from basename_fasta_match.txt
 	dev_sample_bed=${data_folder}/${basename}.samples.dev.bed
 	train_sample_bed=${data_folder}/${basename}.samples.train.bed

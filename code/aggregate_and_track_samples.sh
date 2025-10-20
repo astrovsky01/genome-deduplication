@@ -43,14 +43,14 @@ for file in $train_files; do
         temp_fasta=$(mktemp -t temp_fasta.XXXXXX).fa
         gunzip -c "$fasta_file" > "$temp_fasta"
         bedtools getfasta -fi "$temp_fasta" -bed "$file" -tab > $temp_bed
+        cut -f2 $temp_bed >> $train_txt
+        awk -v basename="$file_basename" '{print $0 "\t" basename}' $file >> $train_bed
         rm "$temp_fasta"
     else
         bedtools getfasta -fi "$fasta_file" -bed "$file" -tab > $temp_bed
+        cut -f2 $temp_bed >> $train_txt
+        awk -v basename="$file_basename" '{print $0 "\t" basename}' $file >> $train_bed
     fi
-    while IFS=$'\t' read -r coord sequence; do
-        echo "$coord" | awk -F':|-' -v fasta_file="$fasta_file" -v sample_id="$file_basename" -v seq="$sequence" '{print $1 "\t" $2 "\t" $3 "\t" fasta_file "\t" sample_id "\t" seq}' >> $train_bed
-    done < "$temp_bed"
-    rm "$temp_bed"
 done
 
 for file in $dev_files; do
@@ -61,27 +61,23 @@ for file in $dev_files; do
     if [[ "$fasta_file" == *.gz ]]; then
         temp_fasta=$(mktemp -t temp_fasta.XXXXXX).fa
         gunzip -c "$fasta_file" > "$temp_fasta"
-        bedtools getfasta -fi "$temp_fasta" -bed "$file" -tab > $temp_bed
+        bedtools getfasta -fi "$temp_fasta" -bed "$file" -tab >> $temp_bed
+        cut -f2 $temp_bed >> $dev_txt
+        awk -v basename="$file_basename" '{print $0 "\t" basename}' $file >> $dev_bed
         rm "$temp_fasta"
     else
-        bedtools getfasta -fi "$fasta_file" -bed "$file" -tab > $temp_bed
+        bedtools getfasta -fi "$fasta_file" -bed "$file" -tab >> $temp_bed
+        cut -f2 $temp_bed >> $dev_txt
+        awk -v basename="$file_basename" '{print $0 "\t" basename}' $file >> $dev_bed
     fi
-    while IFS=$'\t' read -r coord sequence; do
-        echo "$coord" | awk -F':|-' -v fasta_file="$fasta_file" -v sample_id="$file_basename" -v seq="$sequence" '{print $1 "\t" $2 "\t" $3 "\t" fasta_file "\t" sample_id "\t" seq}' >> $dev_bed
-    done < "$temp_bed"
-    rm "$temp_bed"
 done
 
 #Now shuffle the train and dev bed files
-python ./code/shuffle.py $train_bed $random_seed ${train_bed}.shuf
-python ./code/shuffle.py $dev_bed $random_seed ${dev_bed}.shuf
+shuf --random-source="$train_bed" -o ${train_bed}.shuf $train_bed
+shuf --random-source="$train_bed" -o ${train_txt}.shuf $train_txt
+shuf --random-source="$dev_bed" -o ${dev_bed}.shuf $dev_bed
+shuf --random-source="$dev_bed" -o ${dev_txt}.shuf $dev_txt
 mv ${train_bed}.shuf $train_bed
 mv ${dev_bed}.shuf $dev_bed
-
-#Now separate columns 12,3,and 5 to bed files and 6 to txt file
-cut -f6 $train_bed > ${train_txt}
-cut -f6 $dev_bed > ${dev_txt}
-cut -f1,2,3,5 $train_bed > ${train_bed}.tmp
-mv ${train_bed}.tmp $train_bed
-cut -f1,2,3,5 $dev_bed > ${dev_bed}.tmp
-mv ${dev_bed}.tmp $dev_bed
+mv ${train_txt}.shuf $train_txt
+mv ${dev_txt}.shuf $dev_txt
