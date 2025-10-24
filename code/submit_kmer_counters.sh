@@ -1,5 +1,5 @@
 #!/bin/bash
-
+ml bedtools
 #SET SUBMISSION VALUES FOR BOTH SCRIPTS
 # =======================
 in_dir=$1
