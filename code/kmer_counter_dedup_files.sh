@@ -50,12 +50,12 @@ mkdir -p ${in_dir}/kmc_dedup_temp
 mkdir -p ${in_dir}/kmc_ignored_temp
 
 
-kmc -k${kmer_size} -fm -ci1 -t${threads} -m${mem} ${in_dir}/all_sequences.txt ${in_dir}/deduped_fasta_files ${in_dir}/kmc_dedup_temp
+kmc -k${kmer_size} -fm -b -ci1 -t${threads} -m${mem} ${in_dir}/all_sequences.txt ${in_dir}/deduped_fasta_files ${in_dir}/kmc_dedup_temp
 kmc_tools transform ${in_dir}/deduped_fasta_files dump ${output_deduped_file}
 
-kmc -k${kmer_size} -fm -ci1 -t${threads} -m${mem} ${ignored_sequences} ${in_dir}/ignored_fasta_files ${in_dir}/kmc_ignored_temp
+kmc -k${kmer_size} -fm -b -ci1 -t${threads} -m${mem} ${ignored_sequences} ${in_dir}/ignored_fasta_files ${in_dir}/kmc_ignored_temp
 kmc_tools transform ${in_dir}/ignored_fasta_files dump ${output_ignored_file}
 
 total_ignored_and_deduped_file=${in_dir}/total_ignored_and_deduped_kmer_counts.txt
-awk 'NR==FNR {sum[$1]+=$2; next} {sum[$1]+=$2} END {for (key in sum) print key, sum[key]}' ${output_deduped_file} ${output_ignored_file} > ${total_ignored_and_deduped_file}
+awk 'NR==FNR {sum[$1]+=$2; next} {sum[$1]+=$2} END {for (key in sum) print key "\t" sum[key]}' ${output_deduped_file} ${output_ignored_file} > ${total_ignored_and_deduped_file}
 rm -r ${in_dir}/*kmc_*
