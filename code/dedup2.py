@@ -228,17 +228,30 @@ def check_sample(seq, seen_kmers, k, allowed_duplicate_rate, min_sample_len, no_
 
 # Group masked indices into contiguous bed regions
 # e.g. [2,3,4,7,8,20] -> [(2,5), (7,9), (20,21)]
-def condense_masked_regions(masked):
+def condense_masked_regions(masked, k=32):
     masked_regions = []
     if len(masked) == 0:
         return masked_regions
     region_start = masked[0]
     for i in range(len(masked)-1):
+        # If the next masked kmer is contiguous with the current one
         if masked[i] + 1 != masked[i+1]:
-            masked_regions.append((region_start, masked[i] + 1))
+            masked_regions.append((region_start, masked[i] + k))
             region_start = masked[i+1]
-    masked_regions.append((region_start, masked[-1] + 1))
+    masked_regions.append((region_start, masked[-1] + k))
     return masked_regions
+
+def condense_ambiguous_regions(ambiguous):
+    ambiguous_regions = []
+    if len(ambiguous) == 0:
+        return ambiguous_regions
+    region_start = ambiguous[0]
+    for i in range(len(ambiguous)-1):
+        if ambiguous[i] + 1 != ambiguous[i+1]:
+            ambiguous_regions.append((region_start, ambiguous[i] + 1))
+            region_start = ambiguous[i+1]
+    ambiguous_regions.append((region_start, ambiguous[-1] + 1))
+    return ambiguous_regions
 
 ## I/O Functions ================
 
@@ -412,7 +425,7 @@ def deduplicate_seq(seq, seen_kmers, args):
 
     # Convert masked starting indices and ambiguous positions to regions for more condensed bed files
     masked_regions = condense_masked_regions(masked_starts)
-    ambiguous_regions = condense_masked_regions(ambiguous_positions)
+    ambiguous_regions = condense_ambiguous_regions(ambiguous_positions)
 
     return sample_regions, masked_regions, skipped_regions, ambiguous_regions, seen_kmers
 
@@ -443,14 +456,6 @@ def deduplicate_genome(fasta, seen_kmers, save_kmers_to_file, args):
             # Deduplicate this sequence
             sample_regions, masked_regions, skipped_regions, ambiguous_regions, seen_kmers = deduplicate_seq(clean_sequence, seen_kmers, args)
 
-
-            #snapshot = tracemalloc.take_snapshot()
-            #top_stats = snapshot.statistics('lineno')
-            #print("[ Top 10 ]")
-            #for stat in top_stats[:10]:
-            #    print(stat)
-            print(f"Seen kmer size: {sys.getsizeof(seen_kmers)}")
-
             #print(f"Sample regions: {sample_regions}")
             #print(f"Masked regions: {masked_regions}")
             #print(f"Skipped regions: {skipped_regions}")
@@ -476,15 +481,18 @@ def deduplicate(args):
 
     #print("Here in deduplicate()")
     print(f"args: {args}")
-    
+    if not args.yes:
     # Create output directory if it doesn't already exist
-    if not os.path.isdir(args.output_dir):
-        os.makedirs(args.output_dir, exist_ok=True)
+        if not os.path.isdir(args.output_dir):
+            os.makedirs(args.output_dir, exist_ok=True)
+        else:
+            delete_check=input("Output directory already exists. Continue and potentially overwrite files? (y/n): ")
+            if delete_check.lower() != 'y' and delete_check.lower() != 'yes':
+                print("Exiting...")
+                sys.exit(1)
     else:
-        delete_check=input("Output directory already exists. Continue and potentially overwrite files? (y/n): ")
-        if delete_check.lower() != 'y' and delete_check.lower() != 'yes':
-           print("Exiting...")
-           sys.exit(1)
+        if not os.path.isdir(args.output_dir):
+            os.makedirs(args.output_dir, exist_ok=True)
 
     # Write (processed) input args to file for reproducibility
     with open(os.path.join(args.output_dir, "config.json"), 'w') as f:
@@ -559,6 +567,7 @@ def __main__():
     parser.add_argument("--no-overlap", action="store_true", help="Keep neighboring samples discrete rather than overlapping by k-1 bases")
     parser.add_argument("--no-save-kmers-at-end", action="store_true", help="Opt out of saving the seen kmer set at the end of program execution")
     parser.add_argument("-seed", "--seed", type=int, default=123, help="Random seed for reproducibility")
+    parser.add_argument("-y", "--yes", action="store_true", help="Automatic overwrite of output directory if it already exists")
     # Hidden test function -- pass in a file (.fa or .txt) here with expected results to verify correctness
     parser.add_argument("-T", "--test", action="store_true", help=argparse.SUPPRESS)
     # Hidden test kmer set input for testing. If not included, will start with empty kmer set
