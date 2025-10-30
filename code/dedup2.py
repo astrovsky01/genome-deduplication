@@ -122,6 +122,7 @@ def check_sample(seq, seen_kmers, k, allowed_duplicate_rate, min_sample_len, no_
                 ambiguous_idx = N_index
                 # Record entire region before the N as skipped
                 if N_index > 0:
+                    #NOT ADDING K HERE
                     ignored_region = (0, N_index)
                 next_start_offset = N_index + 1
                 sample_end_coord = -1
@@ -190,7 +191,8 @@ def check_sample(seq, seen_kmers, k, allowed_duplicate_rate, min_sample_len, no_
                         # Record the entire region up to and including the original kmer as ignored
                         # Importantly, we do not denote the original kmer as a duplicate, since it is both not in the global set and is not added to a sample
                         #if repeat_match_idx > 0:
-                        ignored_region = (0, next_start_offset)
+                        ##ADDED K HERE
+                        ignored_region = (0, next_start_offset+k)
 
                     # Else if a match to a global kmer
                     else:
@@ -202,8 +204,10 @@ def check_sample(seq, seen_kmers, k, allowed_duplicate_rate, min_sample_len, no_
                         duplicate_start_idx = kmer_start_idx
 
                         # Record the entire region up to but not including the offending kmer as ignored
+                        # Include full final kmer position
                         if kmer_start_idx > 0:
-                            ignored_region = (0, kmer_start_idx)
+                            ##ADDED K HERE
+                            ignored_region = (0, kmer_start_idx+k)
 
                     # Since this sample is invalid, we can discard its seen kmers
                     sample_seen_kmers = None
@@ -421,7 +425,19 @@ def deduplicate_seq(seq, seen_kmers, args):
 
     # Handle possible skipped sequence at the end
     if sample_start < len(seq):
-        skipped_regions.append((sample_start, len(seq)))
+        ## N Check final region and divide between skipped and ambiguous
+        final_sequence=seq[sample_start:len(seq)]
+        while len(final_sequence) > 0:
+            N_index = final_sequence.find('N')
+            # If we find an N
+            if N_index > -1:
+                if N_index != 0:
+                    skipped_regions.append((sample_start, sample_start+N_index))
+                ambiguous_positions.append(sample_start + N_index)
+                sample_start = sample_start + N_index + 1
+            else:
+                skipped_regions.append((sample_start, len(seq)))
+            final_sequence=final_sequence[N_index+1:] if N_index > -1 else ""
 
     # Convert masked starting indices and ambiguous positions to regions for more condensed bed files
     masked_regions = condense_masked_regions(masked_starts)
