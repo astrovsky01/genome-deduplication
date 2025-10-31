@@ -207,7 +207,7 @@ def check_sample(seq, seen_kmers, k, allowed_duplicate_rate, min_sample_len, no_
                         # Include full final kmer position
                         if kmer_start_idx > 0:
                             ##ADDED K HERE
-                            ignored_region = (0, kmer_start_idx+k)
+                            ignored_region = (0, kmer_start_idx+k-1)
 
                     # Since this sample is invalid, we can discard its seen kmers
                     sample_seen_kmers = None
