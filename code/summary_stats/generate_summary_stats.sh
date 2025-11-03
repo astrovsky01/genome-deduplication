@@ -68,6 +68,5 @@ echo -e "${unique_combined_kmers}\t${combined_total_kmer_count}\n" >> ${output_d
 #Show kmer counts of original dataset overlayed with deduped and deduped+ignored kmer distributions
 python code/summary_stats/kmer_count_summary.py ${output_dir}
 
-
 #Show where kmers came from in deduped datasets
 python code/summary_stats/kmer_distribution_plot.py ${input_dir} ${output_dir}
