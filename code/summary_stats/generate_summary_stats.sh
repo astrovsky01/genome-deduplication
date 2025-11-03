@@ -55,16 +55,32 @@ unique_combined_kmers=$(wc -l < ${output_dir}${combined_file})
 combined_total_kmer_count=$(awk '{sum+=$2} END{print sum}' ${output_dir}${combined_file})
 
 
+# N Counter
+
+total=0
+while IFS= read -r file; do
+    if [[ "$file" == *.gz ]]; then
+        count=$(zgrep -v "^>" "$file" | grep -o "N" | wc -l)
+    else
+        count=$(grep -v "^>" "$file" | grep -o "N" | wc -l)
+    fi
+    total=$((total + count))
+done < ${input_dir}/fasta_file_list.txt
+
+ambiguous=$(awk -F'\t' 'BEGIN{SUM=0}{ SUM+=$3-$2 }END{print SUM}' ${input_dir}/*.ambiguous.bed)
+
 #Write summary stats to file
 echo -e "Summary Statistics for kmer size ${kmer_size}:\n" >> ${output_dir}/summary_stats.txt
 echo -e "Source\t|\tUnique kmer counts:\t|\tTotal kmer counts:\n" >> ${output_dir}/summary_stats.txt
+echo -e "-----------------------------------------------\n" >> ${output_dir}/summary_stats.txt
 echo -e "Original fasta files\t|\t${unique_source_kmers}\t|\t${source_total_kmer_count}\n" >> ${output_dir}/summary_stats.txt
 echo -e "Deduplicated files\t|\t${unique_deduped_kmers}\t|\t${deduped_total_kmer_count}\n" >> ${output_dir}/summary_stats.txt
 echo -e "Ignored files\t|\t${unique_ignored_kmers}\t|\t${ignored_total_kmer_count}\n" >> ${output_dir}/summary_stats.txt
 echo -e "Ignored and deduplicated files\t|\t${unique_ignored_deduped_kmers}\t|\t${deduped_ignored_total_kmer_count}\n" >> ${output_dir}/summary_stats.txt
 echo -e "Masked files\t|\t${unique_masked_kmers}\t|\t${masked_total_kmer_count}\n" >> ${output_dir}/summary_stats.txt
 echo -e "Combined files\t|\t${unique_combined_kmers}\t|\t${combined_total_kmer_count}\n" >> ${output_dir}/summary_stats.txt
-
+echo -e "Total N bases in source fasta files: ${total}\n" >> ${output_dir}/summary_stats.txt
+echo -e "Total Ambiguous bases found: ${ambiguous}\n" >> ${output_dir}/summary_stats.txt
 
 
 #Show kmer counts of original dataset overlayed with deduped and deduped+ignored kmer distributions
