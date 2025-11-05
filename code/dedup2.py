@@ -440,7 +440,7 @@ def deduplicate_seq(seq, seen_kmers, args):
             final_sequence=final_sequence[N_index+1:] if N_index > -1 else ""
 
     # Convert masked starting indices and ambiguous positions to regions for more condensed bed files
-    masked_regions = condense_masked_regions(masked_starts)
+    masked_regions = condense_masked_regions(masked_starts, args.kmer)
     ambiguous_regions = condense_ambiguous_regions(ambiguous_positions)
 
     return sample_regions, masked_regions, skipped_regions, ambiguous_regions, seen_kmers
