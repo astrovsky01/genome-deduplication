@@ -33,23 +33,6 @@ if [ -e $ignored_sequences ]; then
 fi
 touch $ignored_sequences
 
-#For each file, getfasta, then pipe that txt to a bedfile with [chrom, start, end, sample_id, sequence]
-for file in $ignored_files; do
-    file_basename=$(basename "$file" .ignored.bed)
-    clean_sample_id="${file_basename//\./_}"
-    fasta_file="${!clean_sample_id}"  # Get actual fasta file from name
-    temp_bed=$(mktemp)
-    if [[ "$fasta_file" == *.gz ]]; then
-        temp_fasta=$(mktemp -t temp_fasta.XXXXXX).fa
-        gunzip -c "$fasta_file" > "$temp_fasta"
-        bedtools getfasta -fi "$temp_fasta" -bed "$file" -name >> $ignored_sequences
-        rm "$temp_fasta"
-    else
-        bedtools getfasta -fi "$fasta_file" -bed "$file" -name >> $ignored_sequences
-    fi
-done
-
-
 ##Create sequnce file for masked sequences
 masked_files=$(ls ${in_dir}/*.masks.bed)
 masked_sequences=${in_dir}/all_masked.txt
@@ -58,21 +41,42 @@ if [ -e $masked_sequences ]; then
 fi
 touch $masked_sequences
 
+
 #For each file, getfasta, then pipe that txt to a bedfile with [chrom, start, end, sample_id, sequence]
-for file in $masked_files; do
-    file_basename=$(basename "$file" .masks.bed)
+for file in $ignored_files; do
+    file_basename=$(basename "$file" .ignored.bed)
+    mask_file="${in_dir}/${file_basename}.masks.bed"
     clean_sample_id="${file_basename//\./_}"
     fasta_file="${!clean_sample_id}"  # Get actual fasta file from name
     temp_bed=$(mktemp)
     if [[ "$fasta_file" == *.gz ]]; then
         temp_fasta=$(mktemp -t temp_fasta.XXXXXX).fa
         gunzip -c "$fasta_file" > "$temp_fasta"
-        bedtools getfasta -fi "$temp_fasta" -bed "$file" -name >> $masked_sequences
+        bedtools getfasta -fi "$temp_fasta" -bed "$file" -name >> $ignored_sequences
+        bedtools getfasta -fi "$temp_fasta" -bed "$mask_file" -name >> $masked_sequences
         rm "$temp_fasta"
     else
-        bedtools getfasta -fi "$fasta_file" -bed "$file" -name >> $masked_sequences
+        bedtools getfasta -fi "$fasta_file" -bed "$file" -name >> $ignored_sequences
     fi
 done
+
+
+
+#For each file, getfasta, then pipe that txt to a bedfile with [chrom, start, end, sample_id, sequence]
+# for file in $masked_files; do
+#     file_basename=$(basename "$file" .masks.bed)
+#     clean_sample_id="${file_basename//\./_}"
+#     fasta_file="${!clean_sample_id}"  # Get actual fasta file from name
+#     temp_bed=$(mktemp)
+#     if [[ "$fasta_file" == *.gz ]]; then
+#         temp_fasta=$(mktemp -t temp_fasta.XXXXXX).fa
+#         gunzip -c "$fasta_file" > "$temp_fasta"
+#         bedtools getfasta -fi "$temp_fasta" -bed "$file" -name >> $masked_sequences
+#         rm "$temp_fasta"
+#     else
+#         bedtools getfasta -fi "$fasta_file" -bed "$file" -name >> $masked_sequences
+#     fi
+# done
 
 #Create a temporary file to store all sequences
 mkdir -p ${in_dir}/kmc_dedup_temp
@@ -93,4 +97,4 @@ awk 'NR==FNR {sum[$1]+=$2; next} {sum[$1]+=$2} END {for (key in sum) print key "
 
 awk 'NR==FNR {sum[$1]+=$2; next} {sum[$1]+=$2} END {for (key in sum) print key "\t" sum[key]}' ${total_ignored_and_deduped_file} ${output_masked_file} > ${combined_kmer_counts}
 
-rm -r ${in_dir}/*kmc_*
+rm -r ${in_dir}/kmc_*
