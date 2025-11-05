@@ -65,6 +65,7 @@ struct Args {
     bool no_overlap = false;
     bool no_save_kmers_at_end = false;
     int seed = 123;
+    bool yes = false;
 };
 
 // Global random number generator
@@ -132,7 +133,7 @@ std::string get_fasta_basename(const std::string& fasta) {
  * Condense a list of indices into contiguous regions
  * e.g. [2,3,4,7,8,20] -> [(2,5), (7,9), (20,21)]
  */
-std::vector<Region> condense_masked_regions(const std::vector<size_t>& masked) {
+std::vector<Region> condense_masked_regions(const std::vector<size_t>& masked, int k = 32) {
     std::vector<Region> masked_regions;
     if (masked.empty()) {
         return masked_regions;
@@ -140,12 +141,13 @@ std::vector<Region> condense_masked_regions(const std::vector<size_t>& masked) {
     
     size_t region_start = masked[0];
     for (size_t i = 0; i < masked.size() - 1; ++i) {
+        // If the next masked kmer is contiguous with the current one
         if (masked[i] + 1 != masked[i + 1]) {
-            masked_regions.emplace_back(region_start, masked[i] + 1);
+            masked_regions.emplace_back(region_start, masked[i] + k);
             region_start = masked[i + 1];
         }
     }
-    masked_regions.emplace_back(region_start, masked.back() + 1);
+    masked_regions.emplace_back(region_start, masked.back() + k);
     return masked_regions;
 }
 
@@ -248,13 +250,13 @@ CheckSampleResult check_sample(
                     if (it != result.sample_seen_kmers.end()) {
                         // Internal match
                         result.next_start_offset = it->second + 1;
-                        result.ignored_region = {0, static_cast<int>(it->second + 1)};
+                        result.ignored_region = {0, static_cast<int>(it->second + k)};
                     } else {
                         // Global match
                         result.next_start_offset = kmer_start_idx + 1;
                         result.duplicate_start_idx = kmer_start_idx;
                         if (kmer_start_idx > 0) {
-                            result.ignored_region = {0, static_cast<int>(kmer_start_idx)};
+                            result.ignored_region = {0, static_cast<int>(kmer_start_idx + k - 1)};
                         }
                     }
                     result.valid_sample_kmers = false;
@@ -369,12 +371,29 @@ DeduplicationResult deduplicate_seq(
     
     // Handle possible skipped sequence at the end
     if (sample_start < seq.length()) {
-        result.skipped_regions.emplace_back(sample_start, seq.length());
+        // N Check final region and divide between skipped and ambiguous
+        std::string final_sequence = seq.substr(sample_start);
+        while (!final_sequence.empty()) {
+            size_t N_index = final_sequence.find('N');
+            // If we find an N
+            if (N_index != std::string::npos) {
+                if (N_index != 0) {
+                    result.skipped_regions.emplace_back(sample_start, sample_start + N_index);
+                }
+                ambiguous_positions.push_back(sample_start + N_index);
+                sample_start = sample_start + N_index + 1;
+                final_sequence = (N_index + 1 < final_sequence.length()) ? 
+                                final_sequence.substr(N_index + 1) : "";
+            } else {
+                result.skipped_regions.emplace_back(sample_start, seq.length());
+                final_sequence = "";
+            }
+        }
     }
     
     // Convert masked starting indices and ambiguous positions to regions
-    result.masked_regions = condense_masked_regions(masked_starts);
-    result.ambiguous_regions = condense_masked_regions(ambiguous_positions);
+    result.masked_regions = condense_masked_regions(masked_starts, args.kmer);
+    result.ambiguous_regions = condense_masked_regions(ambiguous_positions, 1);
     
     return result;
 }
@@ -568,8 +587,8 @@ void deduplicate_genome(
         
         // Match Python's sys.getsizeof - rough estimate of memory usage
         // Python's sys.getsizeof includes overhead, approximate with count * 8 bytes per entry + overhead
-        size_t mem_estimate = 232 + (seen_kmers.size() * 8);
-        std::cout << "Seen kmer size: " << mem_estimate << std::endl;
+        //size_t mem_estimate = 232 + (seen_kmers.size() * 8);
+        //std::cout << "Seen kmer size: " << mem_estimate << std::endl;
         
         local_dict.push_back({seqname, result});
         
@@ -586,7 +605,7 @@ void deduplicate_genome(
  * Main deduplication function
  */
 void deduplicate(const Args& args) {
-    std::cout << "Starting deduplication..." << std::endl;
+    //std::cout << "Starting deduplication..." << std::endl;
     
     // Read input files
     std::vector<std::string> fastas;
@@ -642,7 +661,7 @@ void deduplicate(const Args& args) {
         deduplicate_genome(fasta, seen_kmers, save_kmers, args);
     }
     
-    std::cout << "Deduplication complete!" << std::endl;
+    //std::cout << "Deduplication complete!" << std::endl;
 }
 
 /**
@@ -655,8 +674,10 @@ void print_usage(const char* program_name) {
               << "  -l, --sample-len <int>     Sample length (default: 1000)\n"
               << "  -m, --min-sample-len <int> Minimum sample length (default: same as sample_len)\n"
               << "  -o, --output-dir <path>    Output directory (default: dedup_out/)\n"
+              << "  -p, --seen-kmers <path>    Pickle file containing seen kmers (default: None)\n"
               << "  -r, --retain <float>       Likelihood to allow duplicate kmer [0,1] (default: 0.0)\n"
               << "  -s, --save-every <int>     Save seen kmers every n samples (default: 0)\n"
+              << "  -y, --yes                  Automatically confirm overwrite\n"
               << "  --no-overlap               Keep neighboring samples discrete\n"
               << "  --no-save-kmers-at-end     Don't save kmers at program end\n"
               << "  --seed <int>               Random seed (default: 123)\n"
@@ -691,6 +712,10 @@ Args parse_args(int argc, char* argv[]) {
             if (i + 1 < argc) {
                 args.output_dir = argv[++i];
             }
+        } else if (arg == "-p" || arg == "--seen-kmers") {
+            if (i + 1 < argc) {
+                args.seen_kmers_file = argv[++i];
+            }
         } else if (arg == "-r" || arg == "--retain") {
             if (i + 1 < argc) {
                 args.retain = std::stod(argv[++i]);
@@ -707,6 +732,8 @@ Args parse_args(int argc, char* argv[]) {
             args.no_overlap = true;
         } else if (arg == "--no-save-kmers-at-end") {
             args.no_save_kmers_at_end = true;
+        } else if (arg == "-y" || arg == "--yes") {
+            args.yes = true;
         } else if (arg[0] != '-') {
             args.input.push_back(arg);
         }
@@ -762,7 +789,7 @@ int main(int argc, char* argv[]) {
         }
         
         // Check if output directory exists and prompt user
-        if (fs::exists(args.output_dir)) {
+        if (fs::exists(args.output_dir) && !args.yes) {
             std::cout << "Output directory already exists. Continue and potentially overwrite files? (y/n): ";
             std::string response;
             std::getline(std::cin, response);
