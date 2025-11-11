@@ -58,11 +58,12 @@ combined_total_kmer_count=$(awk '{sum+=$2} END{print sum}' ${output_dir}${combin
 # N Counter
 
 total=0
+validchars="ACGTacgt"
 while IFS= read -r file; do
     if [[ "$file" == *.gz ]]; then
-        count=$(zgrep -v "^>" "$file" | grep -o "N" | wc -l)
+        count=$(zgrep -v "^>" "$file" | grep -o "[^$validchars]" | wc -l)
     else
-        count=$(grep -v "^>" "$file" | grep -o "N" | wc -l)
+        count=$(grep -v "^>" "$file" | grep -o "[^$validchars]" | wc -l)
     fi
     total=$((total + count))
 done < ${input_dir}/fasta_file_list.txt
