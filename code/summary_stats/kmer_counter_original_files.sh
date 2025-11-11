@@ -16,5 +16,5 @@ cut -f2 ${in_dir}/basename_fasta_match.txt > ${in_dir}/fasta_file_list.txt
 mkdir -p ${in_dir}/kmc_temp
 
 kmc -k${kmer_size} -fm -b -ci1 -t${threads} -m${mem} @${in_dir}/fasta_file_list.txt original_fasta_files ${in_dir}/kmc_temp
-kmc_tools transform original_fasta_files dump ${output_file}
+kmc_tools transform original_fasta_files dump -s ${output_file}
 rm -r ${in_dir}/kmc_temp

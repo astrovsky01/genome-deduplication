@@ -12,10 +12,12 @@ total_ignored_and_deduped_file=${in_dir}/ignored_deduped_kmer_counts.txt
 combined_kmer_counts=${in_dir}/combined_all_kmers.txt
 
 
-echo ">kmer_counts" > ${in_dir}/all_sequences.txt
-#Find all fasta files used in the dataset
-sed 's/$/\n>/' ${in_dir}/all_dev.txt >> ${in_dir}/all_sequences.txt
-sed '$!s/$/\n>/' ${in_dir}/all_train.txt >> ${in_dir}/all_sequences.txt
+## Create a proper FASTA file from one-sequence-per-line inputs.
+## Each line of all_dev.txt and all_train.txt is expected to be a sequence
+## (e.g. 1000-length strings). Produce unique headers and sequence lines
+## so downstream tools (kmc) receive valid FASTA input.
+awk '{print ">dev_" NR; print $0}' ${in_dir}/all_dev.txt > ${in_dir}/all_sequences.txt
+awk '{print ">train_" NR; print $0}' ${in_dir}/all_train.txt >> ${in_dir}/all_sequences.txt
 
 
 while IFS=$'\t' read -r var_name var_value; do
@@ -85,13 +87,13 @@ mkdir -p ${in_dir}/kmc_masked_temp
 
 
 kmc -k${kmer_size} -fm -b -ci1 -t${threads} -m${mem} ${in_dir}/all_sequences.txt ${in_dir}/deduped_fasta_files ${in_dir}/kmc_dedup_temp
-kmc_tools transform ${in_dir}/deduped_fasta_files dump ${output_deduped_file}
+kmc_tools transform ${in_dir}/deduped_fasta_files dump -s ${output_deduped_file}
 
 kmc -k${kmer_size} -fm -b -ci1 -t${threads} -m${mem} ${ignored_sequences} ${in_dir}/ignored_fasta_files ${in_dir}/kmc_ignored_temp
-kmc_tools transform ${in_dir}/ignored_fasta_files dump ${output_ignored_file}
+kmc_tools transform ${in_dir}/ignored_fasta_files dump -s ${output_ignored_file}
 
 kmc -k${kmer_size} -fm -b -ci1 -t${threads} -m${mem} ${masked_sequences} ${in_dir}/masked_fasta_files ${in_dir}/kmc_masked_temp
-kmc_tools transform ${in_dir}/masked_fasta_files dump ${output_masked_file}
+kmc_tools transform ${in_dir}/masked_fasta_files dump -s ${output_masked_file}
 
 awk 'NR==FNR {sum[$1]+=$2; next} {sum[$1]+=$2} END {for (key in sum) print key "\t" sum[key]}' ${output_deduped_file} ${output_ignored_file} > ${total_ignored_and_deduped_file}
 
