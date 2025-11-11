@@ -59,6 +59,7 @@ for file in $ignored_files; do
         rm "$temp_fasta"
     else
         bedtools getfasta -fi "$fasta_file" -bed "$file" -name >> $ignored_sequences
+        bedtools getfasta -fi "$temp_fasta" -bed "$mask_file" -name >> $masked_sequences
     fi
 done
 
