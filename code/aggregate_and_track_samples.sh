@@ -43,12 +43,12 @@ for file in $train_files; do
         temp_fasta=$(mktemp -t temp_fasta.XXXXXX).fa
         gunzip -c "$fasta_file" > "$temp_fasta"
         bedtools getfasta -fi "$temp_fasta" -bed "$file" -tab > $temp_bed
-        cut -f2 $temp_bed >> $train_txt
+        cut -f2 $temp_bed | tr '[:lower:]' '[:upper:]' >> $train_txt
         awk -v basename="$file_basename" '{print $0 "\t" basename}' $file >> $train_bed
         rm "$temp_fasta"
     else
         bedtools getfasta -fi "$fasta_file" -bed "$file" -tab > $temp_bed
-        cut -f2 $temp_bed >> $train_txt
+        cut -f2 $temp_bed | tr '[:lower:]' '[:upper:]' >> $train_txt
         awk -v basename="$file_basename" '{print $0 "\t" basename}' $file >> $train_bed
     fi
 done
@@ -62,12 +62,12 @@ for file in $dev_files; do
         temp_fasta=$(mktemp -t temp_fasta.XXXXXX).fa
         gunzip -c "$fasta_file" > "$temp_fasta"
         bedtools getfasta -fi "$temp_fasta" -bed "$file" -tab >> $temp_bed
-        cut -f2 $temp_bed >> $dev_txt
+        cut -f2 $temp_bed | tr '[:lower:]' '[:upper:]' >> $dev_txt
         awk -v basename="$file_basename" '{print $0 "\t" basename}' $file >> $dev_bed
         rm "$temp_fasta"
     else
         bedtools getfasta -fi "$fasta_file" -bed "$file" -tab >> $temp_bed
-        cut -f2 $temp_bed >> $dev_txt
+        cut -f2 $temp_bed | tr '[:lower:]' '[:upper:]' >> $dev_txt
         awk -v basename="$file_basename" '{print $0 "\t" basename}' $file >> $dev_bed
     fi
 done
