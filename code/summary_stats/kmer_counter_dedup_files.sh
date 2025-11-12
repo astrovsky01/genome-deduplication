@@ -63,37 +63,19 @@ for file in $ignored_files; do
     fi
 done
 
-
-
-#For each file, getfasta, then pipe that txt to a bedfile with [chrom, start, end, sample_id, sequence]
-# for file in $masked_files; do
-#     file_basename=$(basename "$file" .masks.bed)
-#     clean_sample_id="${file_basename//\./_}"
-#     fasta_file="${!clean_sample_id}"  # Get actual fasta file from name
-#     temp_bed=$(mktemp)
-#     if [[ "$fasta_file" == *.gz ]]; then
-#         temp_fasta=$(mktemp -t temp_fasta.XXXXXX).fa
-#         gunzip -c "$fasta_file" > "$temp_fasta"
-#         bedtools getfasta -fi "$temp_fasta" -bed "$file" -name >> $masked_sequences
-#         rm "$temp_fasta"
-#     else
-#         bedtools getfasta -fi "$fasta_file" -bed "$file" -name >> $masked_sequences
-#     fi
-# done
-
 #Create a temporary file to store all sequences
 mkdir -p ${in_dir}/kmc_dedup_temp
 mkdir -p ${in_dir}/kmc_ignored_temp
 mkdir -p ${in_dir}/kmc_masked_temp
 
 
-kmc -k${kmer_size} -fm -b -ci1 -t${threads} -m${mem} ${in_dir}/all_sequences.txt ${in_dir}/deduped_fasta_files ${in_dir}/kmc_dedup_temp
+kmc -k${kmer_size} -cs4294967295 -fm -b -ci1 -t${threads} -m${mem} ${in_dir}/all_sequences.txt ${in_dir}/deduped_fasta_files ${in_dir}/kmc_dedup_temp
 kmc_tools transform ${in_dir}/deduped_fasta_files dump -s ${output_deduped_file}
 
-kmc -k${kmer_size} -fm -b -ci1 -t${threads} -m${mem} ${ignored_sequences} ${in_dir}/ignored_fasta_files ${in_dir}/kmc_ignored_temp
+kmc -k${kmer_size} -cs4294967295 -fm -b -ci1 -t${threads} -m${mem} ${ignored_sequences} ${in_dir}/ignored_fasta_files ${in_dir}/kmc_ignored_temp
 kmc_tools transform ${in_dir}/ignored_fasta_files dump -s ${output_ignored_file}
 
-kmc -k${kmer_size} -fm -b -ci1 -t${threads} -m${mem} ${masked_sequences} ${in_dir}/masked_fasta_files ${in_dir}/kmc_masked_temp
+kmc -k${kmer_size} -cs4294967295 -fm -b -ci1 -t${threads} -m${mem} ${masked_sequences} ${in_dir}/masked_fasta_files ${in_dir}/kmc_masked_temp
 kmc_tools transform ${in_dir}/masked_fasta_files dump -s ${output_masked_file}
 
 awk 'NR==FNR {sum[$1]+=$2; next} {sum[$1]+=$2} END {for (key in sum) print key "\t" sum[key]}' ${output_deduped_file} ${output_ignored_file} > ${total_ignored_and_deduped_file}
