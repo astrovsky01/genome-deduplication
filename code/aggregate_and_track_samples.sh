@@ -27,17 +27,10 @@ touch $dev_bed
 train_files=$(ls ${in_dir}/*.samples.train.bed)
 dev_files=$(ls ${in_dir}/*.samples.dev.bed)
 
-while IFS=$'\t' read -r var_name var_value; do
-    # Replace dots with underscores to make valid bash variable names
-    clean_var_name="${var_name//\./_}"
-    declare "$clean_var_name=$var_value"
-done < ${in_dir}/basename_fasta_match.txt
-
 #For each file, getfasta, then pipe that txt to a bedfile with [chrom, start, end, sample_id, sequence]
 for file in $train_files; do
     file_basename=$(basename "$file" .samples.train.bed)
-    clean_sample_id="${file_basename//\./_}"
-    fasta_file="${!clean_sample_id}"  # Get actual fasta file from name
+    fasta_file=$(grep $file_basename ${in_dir}/basename_fasta_match.txt | cut -f2)
     temp_bed=$(mktemp)
     if [[ "$fasta_file" == *.gz ]]; then
         temp_fasta=$(mktemp -t temp_fasta.XXXXXX).fa
@@ -55,8 +48,7 @@ done
 
 for file in $dev_files; do
     file_basename=$(basename "$file" .samples.dev.bed)
-    clean_sample_id="${file_basename//\./_}"
-    fasta_file="${!clean_sample_id}"  # Get actual fasta file from name
+    fasta_file=$(grep $file_basename ${in_dir}/basename_fasta_match.txt | cut -f2)
     temp_bed=$(mktemp)
     if [[ "$fasta_file" == *.gz ]]; then
         temp_fasta=$(mktemp -t temp_fasta.XXXXXX).fa
