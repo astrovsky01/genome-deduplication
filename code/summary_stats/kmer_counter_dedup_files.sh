@@ -56,10 +56,12 @@ for file in $ignored_files; do
         gunzip -c "$fasta_file" > "$temp_fasta"
         bedtools getfasta -fi "$temp_fasta" -bed "$file" -name >> $ignored_sequences
         bedtools getfasta -fi "$temp_fasta" -bed "$mask_file" -name >> $masked_sequences
+        samtools faidx --fai-idx "./${file_basename}.fai" "$temp_fasta"
         rm "$temp_fasta"
     else
         bedtools getfasta -fi "$fasta_file" -bed "$file" -name >> $ignored_sequences
         bedtools getfasta -fi "$temp_fasta" -bed "$mask_file" -name >> $masked_sequences
+        samtools faidx --fai-idx "./${file_basename}.fai" "$fasta_file"
     fi
 done
 
@@ -67,19 +69,39 @@ done
 mkdir -p ${in_dir}/kmc_dedup_temp
 mkdir -p ${in_dir}/kmc_ignored_temp
 mkdir -p ${in_dir}/kmc_masked_temp
+mkdir -p ${in_dir}/kmc_ignored_deduped_temp
+mkdir -p ${in_dir}/kmc_combined_temp
 
 
+touch ${in_dir}/extracted_ignored_dedup_files.txt
+touch ${in_dir}/all_extracted_files.txt
+
+echo ${in_dir}/all_sequences.txt >> ${in_dir}/extracted_ignored_dedup_files.txt
+echo $ignored_sequences >> ${in_dir}/extracted_ignored_dedup_files.txt
+
+echo ${in_dir}/all_sequences.txt >> ${in_dir}/all_extracted_files.txt
+echo $ignored_sequences >> ${in_dir}/all_extracted_files.txt
+echo $masked_sequences >> ${in_dir}/all_extracted_files.txt
+
+echo "Running kmc for deduped"
 kmc -k${kmer_size} -cs4294967295 -fm -b -ci1 -t${threads} -m${mem} ${in_dir}/all_sequences.txt ${in_dir}/deduped_fasta_files ${in_dir}/kmc_dedup_temp
-kmc_tools transform ${in_dir}/deduped_fasta_files dump -s ${output_deduped_file}
+kmc_tools transform ${in_dir}/deduped_fasta_files dump ${output_deduped_file}
 
+echo "Running kmc for ignored"
 kmc -k${kmer_size} -cs4294967295 -fm -b -ci1 -t${threads} -m${mem} ${ignored_sequences} ${in_dir}/ignored_fasta_files ${in_dir}/kmc_ignored_temp
-kmc_tools transform ${in_dir}/ignored_fasta_files dump -s ${output_ignored_file}
+kmc_tools transform ${in_dir}/ignored_fasta_files dump ${output_ignored_file}
 
+echo "Running kmc for masked"
 kmc -k${kmer_size} -cs4294967295 -fm -b -ci1 -t${threads} -m${mem} ${masked_sequences} ${in_dir}/masked_fasta_files ${in_dir}/kmc_masked_temp
-kmc_tools transform ${in_dir}/masked_fasta_files dump -s ${output_masked_file}
+kmc_tools transform ${in_dir}/masked_fasta_files dump ${output_masked_file}
 
-awk 'NR==FNR {sum[$1]+=$2; next} {sum[$1]+=$2} END {for (key in sum) print key "\t" sum[key]}' ${output_deduped_file} ${output_ignored_file} > ${total_ignored_and_deduped_file}
+echo "Running kmc for ignored + deduped"
+kmc -k${kmer_size} -cs4294967295 -fm -b -ci1 -t${threads} -m${mem} @${in_dir}/extracted_ignored_dedup_files.txt ${in_dir}/ignored_dedup_files ${in_dir}/kmc_ignored_deduped_temp
+kmc_tools transform ${in_dir}/ignored_dedup_files dump ${total_ignored_and_deduped_file}
 
-awk 'NR==FNR {sum[$1]+=$2; next} {sum[$1]+=$2} END {for (key in sum) print key "\t" sum[key]}' ${total_ignored_and_deduped_file} ${output_masked_file} > ${combined_kmer_counts}
+echo "Running kmc for combined"
+kmc -k${kmer_size} -cs4294967295 -fm -b -ci1 -t${threads} -m${mem} @${in_dir}/all_extracted_files.txt ${in_dir}/combined_files ${in_dir}/kmc_combined_temp
+kmc_tools transform ${in_dir}/combined_files dump ${combined_kmer_counts}
 
-rm -r ${in_dir}/kmc_*
+rm -r ${in_dir}/*kmc_*
+rm ${in_dir}/extracted_ignored_dedup_files.txt ${in_dir}/all_extracted_files.txt

@@ -36,27 +36,33 @@ mv ${input_dir}${source_kmer_counts} ${output_dir}${source_kmer_counts}
 
 
 #Generate kmer count statistics
+echo "Calculating summary statistics on source files"
 unique_source_kmers=$(wc -l < ${output_dir}${source_kmer_counts})
 source_total_kmer_count=$(awk '{sum+=$2} END{print sum}' ${output_dir}${source_kmer_counts})
 
+echo "Calculating summary statistics on dedup files"
 unique_deduped_kmers=$(wc -l < ${output_dir}${deduped_file})
 deduped_total_kmer_count=$(awk '{sum+=$2} END{print sum}' ${output_dir}${deduped_file})
 
+echo "Calculating summary statistics on ignored files"
 unique_ignored_kmers=$(wc -l < ${output_dir}${ignored_file})
 ignored_total_kmer_count=$(awk '{sum+=$2} END{print sum}' ${output_dir}${ignored_file})
 
+echo "Calculating summary statistics on ignored + deduped files"
 unique_ignored_deduped_kmers=$(wc -l < ${output_dir}${ignored_and_deduped_file})
 deduped_ignored_total_kmer_count=$(awk '{sum+=$2} END{print sum}' ${output_dir}${ignored_and_deduped_file})
 
+echo "Calculating summary statistics on masked files"
 unique_masked_kmers=$(wc -l < ${output_dir}${masked_file})
 masked_total_kmer_count=$(awk '{sum+=$2} END{print sum}' ${output_dir}${masked_file})
 
+echo "Calculating summary statistics on combined files"
 unique_combined_kmers=$(wc -l < ${output_dir}${combined_file})
 combined_total_kmer_count=$(awk '{sum+=$2} END{print sum}' ${output_dir}${combined_file})
 
 
 # N Counter
-
+echo "Counting ambiguous bases in source fasta files"
 total=0
 validchars="ACGTacgt"
 while IFS= read -r file; do
@@ -68,6 +74,7 @@ while IFS= read -r file; do
     total=$((total + count))
 done < ${input_dir}/fasta_file_list.txt
 
+echo "Counting ambigous bases found in dedpuplication"
 ambiguous=$(awk -F'\t' 'BEGIN{SUM=0}{ SUM+=$3-$2 }END{print SUM}' ${input_dir}/*.ambiguous.bed)
 
 #Write summary stats to file
@@ -83,9 +90,13 @@ echo -e "Combined files\t|\t${unique_combined_kmers}\t|\t${combined_total_kmer_c
 echo -e "Total N bases in source fasta files: ${total}\n" >> ${output_dir}/summary_stats.txt
 echo -e "Total Ambiguous bases found: ${ambiguous}\n" >> ${output_dir}/summary_stats.txt
 
+mkdir ${output_dir}/spacing_figures
+while IFS=$'\t' read -r basename fasta_loc; do
+    # Replace dots with underscores to make valid bash variable names
+    sh code/summary_stats/calculate_distance_between_dedups.sh ${basename}.fai ${input_dir}/${basename}.samples.bed ${input_dir}/${basename}_distance_between_deduplicated_regions.csv
+    python code/summary_stats/spacing_info.py ${input_dir}/${basename}_distance_between_deduplicated_regions.csv ${output_dir}/spacing_figures --type dedup --bincount 1000
+done < ${input_dir}/basename_fasta_match.txt
 
-#Show kmer counts of original dataset overlayed with deduped and deduped+ignored kmer distributions
-# python code/summary_stats/kmer_count_summary.py ${output_dir}
 
 #Show where kmers came from in deduped datasets
 # python code/summary_stats/kmer_distribution_plot.py ${input_dir} ${output_dir}
