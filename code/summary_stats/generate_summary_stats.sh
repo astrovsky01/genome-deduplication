@@ -37,28 +37,40 @@ mv ${input_dir}${source_kmer_counts} ${output_dir}${source_kmer_counts}
 
 #Generate kmer count statistics
 echo "Calculating summary statistics on source files"
-unique_source_kmers=$(wc -l < ${output_dir}${source_kmer_counts})
-source_total_kmer_count=$(awk '{sum+=$2} END{print sum}' ${output_dir}${source_kmer_counts})
+unique_source_kmers=$(grep "No. of unique k-mers" ${output_dir}/source_kmer_counts.log | awk '{print $6}')
+source_total_kmer_count=$(grep "Total no. of k-mers" ${output_dir}/source_kmer_counts.log | awk '{print $6}')
+# unique_source_kmers=$(wc -l < ${output_dir}${source_kmer_counts})
+# source_total_kmer_count=$(awk '{sum+=$2} END{print sum}' ${output_dir}${source_kmer_counts})
 
 echo "Calculating summary statistics on dedup files"
-unique_deduped_kmers=$(wc -l < ${output_dir}${deduped_file})
-deduped_total_kmer_count=$(awk '{sum+=$2} END{print sum}' ${output_dir}${deduped_file})
+unique_deduped_kmers=$(grep "No. of unique k-mers" ${output_dir}/deduped_kmer_counts.log | awk '{print $6}')
+deduped_total_kmer_count=$(grep "Total no. of k-mers" ${output_dir}/deduped_kmer_counts.log | awk '{print $6}')
+# unique_deduped_kmers=$(wc -l < ${output_dir}${deduped_file})
+# deduped_total_kmer_count=$(awk '{sum+=$2} END{print sum}' ${output_dir}${deduped_file})
 
 echo "Calculating summary statistics on ignored files"
-unique_ignored_kmers=$(wc -l < ${output_dir}${ignored_file})
-ignored_total_kmer_count=$(awk '{sum+=$2} END{print sum}' ${output_dir}${ignored_file})
+unique_ignored_kmers=$(grep "No. of unique k-mers" ${output_dir}/ignored_kmer_counts.log | awk '{print $6}')
+ignored_total_kmer_count=$(grep "Total no. of k-mers" ${output_dir}/ignored_kmer_counts.log | awk '{print $6}')
+# unique_ignored_kmers=$(wc -l < ${output_dir}${ignored_file})
+# ignored_total_kmer_count=$(awk '{sum+=$2} END{print sum}' ${output_dir}${ignored_file})
 
 echo "Calculating summary statistics on ignored + deduped files"
-unique_ignored_deduped_kmers=$(wc -l < ${output_dir}${ignored_and_deduped_file})
-deduped_ignored_total_kmer_count=$(awk '{sum+=$2} END{print sum}' ${output_dir}${ignored_and_deduped_file})
+unique_ignored_deduped_kmers=$(grep "No. of unique k-mers" ${output_dir}/ignored_deduped_kmer_counts.log | awk '{print $6}')
+deduped_ignored_total_kmer_count=$(grep "Total no. of k-mers" ${output_dir}/ignored_deduped_kmer_counts.log | awk '{print $6}'
+# unique_ignored_deduped_kmers=$(wc -l < ${output_dir}${ignored_and_deduped_file})
+# deduped_ignored_total_kmer_count=$(awk '{sum+=$2} END{print sum}' ${output_dir}${ignored_and_deduped_file})
 
 echo "Calculating summary statistics on masked files"
-unique_masked_kmers=$(wc -l < ${output_dir}${masked_file})
-masked_total_kmer_count=$(awk '{sum+=$2} END{print sum}' ${output_dir}${masked_file})
+unique_masked_kmers=$(grep "No. of unique k-mers" ${output_dir}/masked_kmer_counts.log | awk '{print $6}')
+masked_total_kmer_count=$(grep "Total no. of k-mers" ${output_dir}/masked_kmer_counts.log | awk '{print $6}')
+# unique_masked_kmers=$(wc -l < ${output_dir}${masked_file})
+# masked_total_kmer_count=$(awk '{sum+=$2} END{print sum}' ${output_dir}${masked_file})
 
 echo "Calculating summary statistics on combined files"
-unique_combined_kmers=$(wc -l < ${output_dir}${combined_file})
-combined_total_kmer_count=$(awk '{sum+=$2} END{print sum}' ${output_dir}${combined_file})
+unique_combined_kmers=$(grep "No. of unique k-mers" ${output_dir}/combined_kmer_counts.log | awk '{print $6}')
+combined_total_kmer_count=$(grep "Total no. of k-mers" ${output_dir}/combined_kmer_counts.log | awk '{print $6}')
+# unique_combined_kmers=$(wc -l < ${output_dir}${combined_file})
+# combined_total_kmer_count=$(awk '{sum+=$2} END{print sum}' ${output_dir}${combined_file})
 
 
 # N Counter
@@ -90,13 +102,17 @@ echo -e "Combined files\t|\t${unique_combined_kmers}\t|\t${combined_total_kmer_c
 echo -e "Total N bases in source fasta files: ${total}\n" >> ${output_dir}/summary_stats.txt
 echo -e "Total Ambiguous bases found: ${ambiguous}\n" >> ${output_dir}/summary_stats.txt
 
+
 mkdir ${output_dir}/spacing_figures
 while IFS=$'\t' read -r basename fasta_loc; do
     # Replace dots with underscores to make valid bash variable names
     sh code/summary_stats/calculate_distance_between_dedups.sh ${basename}.fai ${input_dir}/${basename}.samples.bed ${input_dir}/${basename}_distance_between_deduplicated_regions.csv
     python code/summary_stats/spacing_info.py ${input_dir}/${basename}_distance_between_deduplicated_regions.csv ${output_dir}/spacing_figures --type dedup --bincount 1000
+    rm ${input_dir}/${basename}_distance_between_deduplicated_regions.csv
+    sh code/summary_stats/chunk_lengths.sh $input_dir/${basename}.masks.bed
+    python code/summary_stats/spacing_info.py ${input_dir}/${basename}_masked_chunk_lengths.txt ${output_dir}/spacing_figures --type masked_chunks --bincount 1000
+    rm ${input_dir}/${basename}_masked_chunk_lengths.txt
+    sh code/summary_stats/chunk_lengths.sh $input_dir/${basename}.ignored.bed
+    python code/summary_stats/spacing_info.py ${input_dir}/${basename}_ignored_chunk_lengths.txt ${output_dir}/spacing_figures --type ignored_chunks --bincount 1000
+    rm ${input_dir}/${basename}_ignored_chunk_lengths.txt
 done < ${input_dir}/basename_fasta_match.txt
-
-
-#Show where kmers came from in deduped datasets
-# python code/summary_stats/kmer_distribution_plot.py ${input_dir} ${output_dir}
