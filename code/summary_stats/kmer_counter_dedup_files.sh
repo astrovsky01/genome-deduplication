@@ -115,7 +115,6 @@ kmc_tools transform ${in_dir}/ignored_dedup_files dump ${total_ignored_and_dedup
 
 echo "Running kmc for combined"
 kmc -k${kmer_size} -cs4294967295 -fm -b -ci1 -t${threads} -m${mem} @${in_dir}/all_extracted_files.txt ${in_dir}/combined_files ${in_dir}/kmc_combined_temp >${in_dir}/combined_kmer_counts.log
-
+kmc_tools transform ${in_dir}/combined_files dump ${combined_kmer_counts}
 
 rm -r ${in_dir}/*kmc_*
-# rm ${in_dir}/extracted_ignored_dedup_files.txt ${in_dir}/all_extracted_files.txt
