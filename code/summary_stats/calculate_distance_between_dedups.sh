@@ -15,13 +15,21 @@ touch sample_contig.txt
 
 while IFS=$'\t' read -r contig length offset linebases linewidth qualoffset
 do
-    grep "^${contig}" $sample_file > sample_contig.txt
-    first_val=$(head -1 sample_contig.txt | cut -f2)
-    if [[ -n "$first_val" ]]; then
-        printf "%s," "$first_val" >> $output_file
+    grep "^${contig}	" $sample_file > sample_contig.txt
+    first_start=$(head -1 sample_contig.txt | cut -f2)
+    if [[ -n "$first_start" ]]; then
+        # Output gap from start of contig (position 0) to first region
+        printf "%s," "$first_start" >> $output_file
     fi
     
-    distances=$(awk 'NR > 1 { results = results "," ($2 - prev_col3) } { prev_col3 = $3 } END { if (results != "") printf "%s", substr(results, 2) }' sample_contig.txt)
+    distances=$(awk 'NR > 1 { 
+        gap = $2 - prev_col3; 
+        results = results "," gap 
+    } { 
+        prev_col3 = $3 
+    } END { 
+        if (results != "") printf "%s", substr(results, 2) 
+    }' sample_contig.txt)
     if [[ -n "$distances" ]]; then
         printf "%s," "$distances" >> $output_file
     fi
