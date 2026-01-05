@@ -4,8 +4,14 @@ ml bedtools
 in_dir=$1
 all_deduped_kmers=$2
 kmer_size=$3
+threads=$4
+mem=$5
 not_included_kmers=${in_dir}/not_included_kmers.txt
 script_dir=$(dirname "$0")
+unused_sequence_txt=${in_dir}/unused_sequences.txt
+unused_sequences_fasta=${in_dir}/unused_sequences.fasta
+unused_kmers_txt=${in_dir}/unused_kmers.txt
+input_file=${in_dir}/python_inputs.txt
 
 if [ -e "$not_included_kmers" ]; then
     rm "$not_included_kmers"
@@ -37,6 +43,31 @@ for file in ${in_dir}/*.ignored.bed; do
         echo "Processing ignored kmers for $file_basename"
         bedtools getfasta -fi "$fasta_file" -bed "$file" -tab >> $temp_bed
     fi
-    python ${script_dir}/unused_kmers.py --ignored_file $temp_bed --file_name $file_basename --kmer_size $kmer_size --deduped_kmers $all_deduped_kmers --outfile $not_included_kmers
-    rm $temp_bed
+    echo -e "$temp_bed\t$file_basename" >> $input_file
 done
+
+
+# python ${script_dir}/unused_kmers.py --ignored_file $temp_bed --file_name $file_basename --kmer_size $kmer_size --deduped_kmers $all_deduped_kmers --outfile $not_included_kmers
+
+python ${script_dir}/unused_kmers.py --input $input_file --kmer_size $kmer_size --deduped_kmers $all_deduped_kmers --outfile $not_included_kmers
+
+tmp_beds=$(cut -f1 $input_file)
+rm $input_file
+for bed in $tmp_beds; do
+    rm $bed
+done
+
+# Break sequences into kmers and kmc to count unique unused kmers
+mkdir -p ${in_dir}/kmc_tmp
+cut -f 4 $not_included_kmers > $unused_sequence_txt
+cut -f 1,2,3,5 $not_included_kmers > ${not_included_kmers%.txt}.bed
+
+# Convert raw sequences to FASTA format for KMC
+awk '{print ">"NR"\n"$0}' $unused_sequence_txt > $unused_sequences_fasta
+kmc -k${kmer_size} -cs4294967295 -fm -b -ci1 -t${threads} -m${mem} $unused_sequences_fasta ${in_dir}/unused_kmers_db ${in_dir}/kmc_tmp
+kmc_tools transform ${in_dir}/unused_kmers_db dump $unused_kmers_txt
+rm ${in_dir}/unused_kmers_db*
+# rm -rf ${in_dir}/kmc_tmp
+# rm $unused_sequence_txt
+# rm $unused_sequences_fasta
+# rm $not_included_kmers
