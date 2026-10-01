@@ -1,0 +1,41 @@
+###SLURM VARIABLES###
+#_____________________________
+# Fill in any values you need below. Leave a value as "" to omit that
+# #SBATCH option entirely from the generated script.
+#
+# Note: --array is computed automatically by synopsis based on the
+# number of input files, and is not set here.
+
+job-name=""
+account=""
+partition=""
+time=""
+mem=""
+cpus-per-task=""
+ntasks=""
+nodes=""
+gres=""
+output=""
+error=""
+mail-user=""
+mail-type=""
+
+###LOCAL SETUP (ENVIRONMENTS, MODULES, ETC)###
+#_____________________________
+# Anything below this line is copied verbatim into the generated script,
+# and runs once per array task, BEFORE deduplication runs on that task's
+# assigned file.
+#
+# You do NOT need to write any array-handling logic here (no need to
+# reference $SLURM_ARRAY_TASK_ID, look up the input file, build output
+# paths, etc.) -- synopsis automatically generates and appends all of
+# that logic itself, immediately after this section, in the final
+# script it writes out.
+#
+# Use this section only for one-time-per-task setup, e.g.:
+#
+# module load anaconda3
+# source activate my_env
+#
+# module load gcc/11.2
+# export OMP_NUM_THREADS=4
