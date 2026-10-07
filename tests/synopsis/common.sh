@@ -13,7 +13,21 @@ fi
 
 # Create the isolated fixture directory and command stubs used by each test.
 test_dir="$(mktemp -d "${TMPDIR:-/tmp}/synopsis-tests.XXXXXX")"
-trap 'rm -rf "$test_dir"' EXIT
+cleanup_test_dir() {
+    if [ -n "${KEEP_TEST_DIR:-}" ]; then
+        if [ "$KEEP_TEST_DIR" = 1 ]; then
+            preserved_dir="$ROOTDIR/tests/synopsis/last_run"
+        else
+            preserved_dir="$ROOTDIR/$KEEP_TEST_DIR"
+        fi
+        rm -rf "$preserved_dir"
+        mv "$test_dir" "$preserved_dir"
+        printf 'Preserved test files: %s\n' "$preserved_dir" >&2
+    else
+        rm -rf "$test_dir"
+    fi
+}
+trap cleanup_test_dir EXIT
 
 input_list="$test_dir/gca_inputs.txt"
 empty_config_file="$ROOTDIR/tests/synopsis/fixtures/slurm/slurm_empty.conf"
