@@ -19,6 +19,7 @@ output=""
 error=""
 mail-user=""
 mail-type=""
+max_concurrent_jobs=""
 
 ###LOCAL SETUP (ENVIRONMENTS, MODULES, ETC)###
 #_____________________________
