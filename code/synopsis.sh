@@ -51,17 +51,17 @@ usage() {
     echo "  -v <int>    overlap"
     echo "  -r          retain_info"
     echo "  --save_kmers_at_end"
-    echo "  --write_ambiguous_beds"
-    echo "  --write_ignored_beds"
-    echo "  --write_masked_beds"
+    echo "  --write_ambiguous_beds (not used in shuffle)"
+    echo "  --write_ignored_beds (not used in shuffle)"
+    echo "  --write_masked_beds (not used in shuffle)"
     echo "  --seed <int>"
     echo "  -h, --help"
     echo ""
     echo "Mode-specific options:"
     echo " Shuffle:"
-    echo "  -i           generate final ignored bed files"
-    echo "  -z           generate final masked bed files"
-    echo "  -x           add originally ignored files"
+    echo "  -i           generate final ignored bed files for each original input file"
+    echo "  -z           generate final masked bed files for each original input file"
+    echo "  -x           add originally ignored files to secondary deuplication step (after shuffling)"
     echo " Individual/batch:"
     echo "  --config <file>  generate a batch script with this config"
     echo "  -y         submit batch script immediately"
@@ -212,6 +212,10 @@ while [[ $# -gt 0 ]]; do
             seed_val="$2"
             shift 2
             ;;
+        --overlap)
+            overlap="$2"
+            shift 2
+            ;;
         --config)
             config_file="$2"
             shift 2
@@ -356,11 +360,14 @@ if [[ "$mode" == "shuffle" ]]; then
     [[ -n "$output_dir" ]] && shuffle_args+=(-o "$output_dir")
     [[ -n "$seen_kmers" ]] && shuffle_args+=(-p "$seen_kmers")
     [[ -n "$save_every" ]] && shuffle_args+=(-s "$save_every")
+    [[ -n "$seed_val" ]] && shuffle_args+=(--seed "$seed_val")
+    [[ -n "$overlap" ]] && shuffle_args+=(-v "$overlap")
     [[ "$retain_info" -eq 1 ]] && shuffle_args+=(-r)
     [[ "$shuffle_i" -eq 1 ]] && shuffle_args+=(-i)
     [[ "$shuffle_z" -eq 1 ]] && shuffle_args+=(-z)
     [[ "$shuffle_x" -eq 1 ]] && shuffle_args+=(-x)
     shuffle_args+=(-e "$mapped_eval")
+
 
     exec "$SHUFFLE_SCRIPT" "${shuffle_args[@]}" "$file_list_arg" "$indir_arg"
     # printf '# exec'
@@ -419,7 +426,7 @@ elif [[ "$mode" == "batch" ]]; then
         if [[ "$input_arg" == *.txt ]]; then
             echo "## Using SLURM_ARRAY_TASK_ID to select the input file from the list"
             echo "FASTA_LIST=\"$input_path\""
-            echo 'FASTA_PATH=$(awk -v index="$SLURM_ARRAY_TASK_ID" '\''NF && $0 !~ /^[[:space:]]*#/ { if (count++ == index) { print; exit } }'\'' "$FASTA_LIST")'
+            echo 'FASTA_PATH=$(awk -v idx="$SLURM_ARRAY_TASK_ID" '\''NF && $0 !~ /^[[:space:]]*#/ { if (count++ == idx) { print; exit } }'\'' "$FASTA_LIST")'
         else
             echo "FASTA_PATH=\"$input_path\""
         fi
@@ -449,5 +456,4 @@ else
     dedup_opts=()
     [[ -n "$output_dir" ]] && dedup_opts+=(-o "$output_dir")
     exec "$DEDUP_BIN" "${dedup_args[@]}" "${dedup_opts[@]}" "$input_arg"
-    # echo 'exec "$DEDUP_BIN" "${dedup_args[@]}" "${dedup_opts[@]}" "$input_arg"'
 fi

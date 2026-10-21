@@ -132,6 +132,10 @@ write_expected_script "$all_expected" \
 	'#SBATCH --mail-type="END,FAIL"'
 assert_md5_file "$generated_script" "$all_expected" 'all-config generated script'
 
+# Test: the generated Slurm script is valid Bash.
+# Expected: bash -n accepts the script; config.json validation is covered by test_outputs.sh.
+bash -n "$generated_script"
+
 # Test: -y submits the generated script for the full config.
 # Expected: sbatch receives exactly synopsis_batch_kmer.sh.
 export SYNOPSIS_SUBMISSION_LOG="$submission_log"
