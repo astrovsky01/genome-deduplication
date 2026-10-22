@@ -75,16 +75,18 @@ fi
 sample_beds=$(ls $data_folder/*.samples.bed)
 
 for sample_bed in $sample_beds; do
-	
-	# Get all needed file names
-	basename=$(basename $sample_bed | rev | cut -d'.' -f3- | rev)
-	sample_fasta=$(grep "^${basename}" ${data_folder}/basename_fasta_match.txt | cut -f2) # query corresponding fasta for this sample from basename_fasta_match.txt
-	dev_sample_bed=${data_folder}/${basename}.samples.dev.bed
-	train_sample_bed=${data_folder}/${basename}.samples.train.bed
+    if [[ "$(basename "$sample_bed")" == "shuffled.samples.bed" ]]; then
+        continue
+    fi
 
-	# Get training/dev beds/txts for each sample bed
-	echo "Partitioning samples"
-	./code/partition_samples.sh $sample_bed $dev_pct $max_dev_samples $shuf_seed
+    # Get all needed file names
+    basename=$(basename "$sample_bed" | rev | cut -d'.' -f3- | rev)
+    sample_fasta=$(grep "^${basename}" "${data_folder}/basename_fasta_match.txt" | cut -f2)
+    dev_sample_bed="${data_folder}/${basename}.samples.dev.bed"
+    train_sample_bed="${data_folder}/${basename}.samples.train.bed"
+
+    echo "Partitioning samples"
+    ./code/partition_samples.sh "$sample_bed" "$dev_pct" "$max_dev_samples" "$shuf_seed"
 done
 if [ "$no_txt" = false ]; then
     echo "Finished partitioning samples into train/dev sets. Aggregating and retrieving sequences now"

@@ -17,20 +17,20 @@
 in_dir=$1
 random_seed=$2
 no_txt=${3:-false}
-
 train_bed=${in_dir}/all_train.bed
 dev_bed=${in_dir}/all_dev.bed
 train_txt=${in_dir}/all_train.txt
 dev_txt=${in_dir}/all_dev.txt
 touch $train_bed
 touch $dev_bed
-
 train_files=$(ls ${in_dir}/*.samples.train.bed)
 dev_files=$(ls ${in_dir}/*.samples.dev.bed)
 
 #For each file, getfasta, then pipe that txt to a bedfile with [chrom, start, end, sample_id, sequence]
 for file in $train_files; do
     file_basename=$(basename "$file" .samples.train.bed)
+    # For shuffle, also remove the .final suffix if present
+    file_basename=$(basename "$file_basename" .final)
     fasta_file=$(grep $file_basename ${in_dir}/basename_fasta_match.txt | cut -f2)
     temp_bed=$(mktemp)
     if [[ "$fasta_file" == *.gz ]]; then
@@ -53,6 +53,7 @@ done
 
 for file in $dev_files; do
     file_basename=$(basename "$file" .samples.dev.bed)
+    file_basename=$(basename "$file_basename" .final)
     fasta_file=$(grep $file_basename ${in_dir}/basename_fasta_match.txt | cut -f2)
     temp_bed=$(mktemp)
     if [[ "$fasta_file" == *.gz ]]; then

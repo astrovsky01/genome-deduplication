@@ -21,8 +21,9 @@ primary_binary="dedup6"
 ROOTDIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 DEDUP_BIN="${DEDUP_BIN:-$ROOTDIR/$primary_binary}"
 SHUFFLE_SCRIPT="${SHUFFLE_SCRIPT:-$ROOTDIR/shuffle_method.sh}"
+FINAL_SAMPLES_SCRIPT="${FINAL_SAMPLES_SCRIPT:-$ROOTDIR/get_samples.sh}"
 
-readonly MODE_WORDS=(individual shuffle)
+readonly MODE_WORDS=(individual balanced)
 readonly VALID_EVAL_METHODS=(kmer sample)
 
 declare -A EVAL_METHOD_MAP=(
@@ -38,34 +39,41 @@ usage() {
     echo "  Direct mode (default):   $0 [kmer|sample] [options] <input file|list>"
     echo "  Individual mode:         $0 individual [kmer|sample] [options] <input file|list>"
     echo "  Batch mode:              $0 individual [kmer|sample] --config <config_file> [-y] [options] <input file|list>"
-    echo "  Shuffle mode:            $0 shuffle [kmer|sample] [options] <file_list> <indir>"
+    echo "  Balanced mode:           $0 balanced [kmer|sample] [options] <file_list> <indir>"
     echo ""
     echo "Dedup options (shared across all modes):"
-    echo "  -d <float>  dedup_param"
-    echo "  -k <int>    kmer"
-    echo "  -l <int>    sample_len"
-    echo "  -m <int>    min_sample_len"
-    echo "  -o <path>   output_dir"
-    echo "  -p <path>   seen_kmers"
-    echo "  -s <int>    save_every"
-    echo "  -v <int>    overlap"
-    echo "  -r          retain_info"
+    echo "  -d <float>  Duplicate retention rate. Default 0.0 (strict)"
+    echo "  -k <int>    K-mer length"
+    echo "  -l <int>    Sample length"
+    echo "  -m <int>    Minimum sample length. Allows smaller samples than -l to be retained. Defaults to sample length"
+    echo "  -o <path>   Output directory path"
+    echo "  -p <path>   Seen kmers file path"
+    echo "  -s <int>    Save kmer set every <int> sequences"
+    echo "  -v <int>    Overlap samples by specified base count"
+    echo "  -r          Retain information as scanning each contig. Recommended for large sample lengths."
     echo "  --save_kmers_at_end"
-    echo "  --write_ambiguous_beds (not used in shuffle)"
-    echo "  --write_ignored_beds (not used in shuffle)"
-    echo "  --write_masked_beds (not used in shuffle)"
+    echo "  --write_ambiguous_beds (not used in balanced)"
+    echo "  --write_ignored_beds (not used in balanced)"
+    echo "  --write_masked_beds (not used in balanced)"
     echo "  --seed <int>"
     echo "  -h, --help"
     echo ""
     echo "Mode-specific options:"
-    echo " Shuffle:"
+    echo " Balanced"
     echo "  -i           generate final ignored bed files for each original input file"
     echo "  -z           generate final masked bed files for each original input file"
-    echo "  -x           add originally ignored files to secondary deuplication step (after shuffling)"
+    echo "  -x           add originally ignored files to secondary deuplication step after shuffling. Must have run previous step with --write-ignored-beds."
     echo " Individual/batch:"
     echo "  --config <file>  generate a batch script with this config"
     echo "  -y         submit batch script immediately"
     echo ""
+    echo "Post-processing options:"
+    echo "  -f          Generate final training bed and fasta files from all samples. Creates <output dir>/all_train.bed, <output dir>/all_train.fasta, and <output dir>/all_dev.bed, all_dev.fasta"
+    echo "  -t <int>    Specify the number of samples to reserve for test set. If not specified, no separate test set will be generated."
+    echo "  --dev_rate <float>  Specify the fraction of samples to reserve for dev set. Default 0.1"
+    echo "  --max_dev <int>  Specify the maximum number of samples to reserve for dev set. If this count is lower than the dev_rate fraction, the dev set will be capped at this number."
+    echo ""
+
 }
 
 die() {
@@ -189,6 +197,11 @@ config_file=""
 submit_now=0
 max_concurrent_jobs=""
 
+final_samples_out=0
+test_set_count=""
+dev_rate="0.1"
+max_dev=""
+
 args=()
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -220,6 +233,14 @@ while [[ $# -gt 0 ]]; do
             config_file="$2"
             shift 2
             ;;
+        --dev_rate)
+            dev_rate="$2"
+            shift 2
+            ;;
+        --max_dev)
+            max_dev="$2"
+            shift 2
+            ;;
         --help)
             usage
             exit 0
@@ -235,7 +256,7 @@ while [[ $# -gt 0 ]]; do
 done
 set -- "${args[@]}"
 
-while getopts ":d:k:l:m:o:p:s:v:rizxyh" opt; do
+while getopts ":d:k:l:m:o:p:s:v:t:rizxyhf" opt; do
     case "$opt" in
         d) dedup_param="$OPTARG" ;;
         k) kmer_size="$OPTARG" ;;
@@ -244,7 +265,9 @@ while getopts ":d:k:l:m:o:p:s:v:rizxyh" opt; do
         o) output_dir="$OPTARG" ;;
         p) seen_kmers="$OPTARG" ;;
         s) save_every="$OPTARG" ;;
+        t) test_set_count="$OPTARG" ;;
         v) overlap="$OPTARG" ;;
+        f) final_samples_out=1;;
         r) retain_info=1 ;;
         i) shuffle_i=1 ;;
         z) shuffle_z=1 ;;
@@ -270,8 +293,8 @@ if [[ "$mode" == "batch" ]]; then
     [[ -f "$config_file" ]] || die "config file not found: $config_file"
 fi
 
-if [[ "$mode" == "shuffle" ]]; then
-    [[ $# -eq 2 ]] || die "shuffle mode requires exactly two positional arguments: <file_list> <indir>"
+if [[ "$mode" == "balanced" ]]; then
+    [[ $# -eq 2 ]] || die "balanced mode requires exactly two positional arguments: <file_list> <indir>"
 else
     [[ $# -eq 1 ]] || die "expected exactly one positional input argument (file or list), got $#"
 fi
@@ -293,6 +316,16 @@ build_dedup_args() {
     [[ "$write_ignored_beds" -eq 1 ]] && result+=(--write_ignored_beds)
     [[ "$write_masked_beds" -eq 1 ]] && result+=(--write_masked_beds)
     [[ -n "$seed_val" ]] && result+=(--seed "$seed_val")
+    eval "$out_ref=(\"\${result[@]}\")"
+}
+
+build_final_file_args() {
+    local out_ref="$1"
+    local -a result=()
+    [[ -n "$test_set_count" ]] && result+=(-t "$test_set_count")
+    [[ -n "$dev_rate" ]] && result+=(-p "$dev_rate")
+    [[ -n "$max_dev" ]] && result+=(-m "$max_dev")
+    [[ -n "$seed_val" ]] && result+=(-s "$seed_val")
     eval "$out_ref=(\"\${result[@]}\")"
 }
 
@@ -347,8 +380,8 @@ fi
     eval "$freetext_ref=(\"\${freetext_result[@]}\")"
 }
 
-## SHUFFLE MODE
-if [[ "$mode" == "shuffle" ]]; then
+## BALANCED MODE
+if [[ "$mode" == "balanced" ]]; then
     file_list_arg="$1"
     indir_arg="$2"
 
@@ -369,7 +402,8 @@ if [[ "$mode" == "shuffle" ]]; then
     shuffle_args+=(-e "$mapped_eval")
 
 
-    exec "$SHUFFLE_SCRIPT" "${shuffle_args[@]}" "$file_list_arg" "$indir_arg"
+    # exec "$SHUFFLE_SCRIPT" "${shuffle_args[@]}" "$file_list_arg" "$indir_arg"
+    "$SHUFFLE_SCRIPT" "${shuffle_args[@]}" "$file_list_arg" "$indir_arg"
     # printf '# exec'
     # printf ' %q' "$SHUFFLE_SCRIPT" "${shuffle_args[@]}" "$file_list_arg" "$indir_arg"
     # printf '\n'
@@ -389,8 +423,6 @@ elif [[ "$mode" == "individual" ]]; then
         sub="$(basename_noext "$fasta")"
         this_out="${output_dir:-.}/${sub}"
         "$DEDUP_BIN" "${dedup_args[@]}" -o "$this_out" "$fasta"
-        # echo '"$DEDUP_BIN" "${dedup_args[@]}" -o "$this_out" "$fasta"'
-
     done
 
 
@@ -403,6 +435,9 @@ elif [[ "$mode" == "batch" ]]; then
     [[ ${#fasta_list[@]} -gt 0 ]] || die "no input files found"
 
     build_dedup_args dedup_args
+    if [[ "$final_samples_out" -eq 1 ]]; then
+        build_final_file_args final_args
+    fi
 
     parse_slurm_config "$config_file" sbatch_lines freetext_lines
 
@@ -419,30 +454,44 @@ elif [[ "$mode" == "batch" ]]; then
         done
         echo "#SBATCH --array=${array_range}"
         echo ""
+
         for line in "${freetext_lines[@]}"; do
             echo "$line"
         done
         echo ""
+
         if [[ "$input_arg" == *.txt ]]; then
-            echo "## Using SLURM_ARRAY_TASK_ID to select the input file from the list"
             echo "FASTA_LIST=\"$input_path\""
             echo 'FASTA_PATH=$(awk -v idx="$SLURM_ARRAY_TASK_ID" '\''NF && $0 !~ /^[[:space:]]*#/ { if (count++ == idx) { print; exit } }'\'' "$FASTA_LIST")'
         else
             echo "FASTA_PATH=\"$input_path\""
         fi
+
         echo 'BASENAME=$(basename "$FASTA_PATH")'
         echo 'BASENAME="${BASENAME%.gz}"'
         echo 'BASENAME="${BASENAME%.*}"'
+        echo ""
+
+        echo 'OUTPUT_DIR="'"${output_dir:-.}"'/${BASENAME}"'
+
         echo ""
         printf '"%s"' "$DEDUP_BIN"
         for a in "${dedup_args[@]}"; do
             printf ' "%s"' "$a"
         done
-        echo ' -o "'"${output_dir:-.}"'/${BASENAME}" "$FASTA_PATH"'
+        echo ' -o "$OUTPUT_DIR" "$FASTA_PATH"'
+
+        if [[ "$final_samples_out" -eq 1 ]]; then
+            echo "FINAL_SAMPLES_SCRIPT=\"$FINAL_SAMPLES_SCRIPT\""
+            echo -n '"$FINAL_SAMPLES_SCRIPT" "$OUTPUT_DIR"'
+            for a in "${final_args[@]}"; do
+                echo -n " \"$a\""
+            done
+            echo
+        fi
     } > "$out_script"
 
     chmod +x "$out_script"
-
     echo "Generated: $out_script"
 
     if [[ "$submit_now" -eq 1 ]]; then
@@ -455,5 +504,41 @@ else
     build_dedup_args dedup_args
     dedup_opts=()
     [[ -n "$output_dir" ]] && dedup_opts+=(-o "$output_dir")
-    exec "$DEDUP_BIN" "${dedup_args[@]}" "${dedup_opts[@]}" "$input_arg"
+    # exec "$DEDUP_BIN" "${dedup_args[@]}" "${dedup_opts[@]}" "$input_arg"
+    "$DEDUP_BIN" "${dedup_args[@]}" "${dedup_opts[@]}" "$input_arg"
+
+fi
+
+
+# FINAL SAMPLE GENERATION
+if [[ "$final_samples_out" -eq 1 ]]; then
+    if [[ "$mode" == "individual" ]]; then
+    # Make final files for each subdirectory in the output directory
+        for subdir in "$output_dir"/*/; do
+            if [[ -d "$subdir" ]]; then
+                build_final_file_args final_args
+                # exec "$FINAL_SAMPLES_SCRIPT" $subdir "${final_args[@]}"
+                "$FINAL_SAMPLES_SCRIPT" $subdir "${final_args[@]}"
+            fi
+        done
+    elif [[ "$mode" == "balanced" ]]; then
+        build_final_file_args final_args
+
+        mv "${indir_arg}/final_files/basename_fasta_match.txt" \
+        "${indir_arg}/final_files/shuffled_basename_fasta_match.txt"
+
+        # Rebuild the mapping file from each individual directory
+        for fasta in "${indir_arg}"/*.merged.bed; do
+            individual_dir="${fasta%.merged.bed}"
+            cat "${individual_dir}/basename_fasta_match.txt" \
+                >> "${indir_arg}/final_files/basename_fasta_match.txt"
+        done
+        "$FINAL_SAMPLES_SCRIPT" ${indir_arg}/final_files "${final_args[@]}"
+    elif [[ "$mode" == "direct" ]]; then
+        build_final_file_args final_args
+
+        input_dir="${output_dir:-dedup_out}"
+        echo "$FINAL_SAMPLES_SCRIPT" -i "$input_dir" "${final_args[@]}"
+        "$FINAL_SAMPLES_SCRIPT" -i "$input_dir" "${final_args[@]}"
+    fi
 fi
