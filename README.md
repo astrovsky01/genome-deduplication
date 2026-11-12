@@ -122,7 +122,7 @@ When a `.txt` list is given to `individual` mode:
 ## Shared Post-processing parameters
 | Flag | Description |
 |---|---|
-| `-t <int>`  | Specify the number of samples to reserve for test set. If not specified, no separate test set will be generated | 
+| `-t <float>`  | Specify the amount of samples to reserve for test set relative to the total number of samples. If not specified, no separate test set will be generated | 
 | `--dev_rate <float>` | Specify the fraction of samples to reserve for dev set. Default 0.1 |
 | `--max_dev <int>` |  Specify the maximum number of samples to reserve for dev set. If this count is lower than the dev_rate fraction, the dev set will be capped at this number. |
 

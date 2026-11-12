@@ -69,7 +69,7 @@ usage() {
     echo ""
     echo "Post-processing options:"
     echo "  -f          Generate final training bed and fasta files from all samples. Creates <output dir>/all_train.bed, <output dir>/all_train.fasta, and <output dir>/all_dev.bed, all_dev.fasta"
-    echo "  -t <int>    Specify the number of samples to reserve for test set. If not specified, no separate test set will be generated."
+    echo "  -t <float>    Specify the amount of samples to reserve for test set relative to the total number of samples. If not specified, no separate test set will be generated."
     echo "  --dev_rate <float>  Specify the fraction of samples to reserve for dev set. Default 0.1. This is recommended over --max_dev, which is a hard cap on the number of dev samples and may bias the results."
     echo "  --max_dev <int>  Specify the maximum number of samples to reserve for dev set. If this count is lower than the dev_rate fraction, the dev set will be capped at this number."
     echo ""
