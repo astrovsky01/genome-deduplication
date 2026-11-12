@@ -70,7 +70,7 @@ usage() {
     echo "Post-processing options:"
     echo "  -f          Generate final training bed and fasta files from all samples. Creates <output dir>/all_train.bed, <output dir>/all_train.fasta, and <output dir>/all_dev.bed, all_dev.fasta"
     echo "  -t <int>    Specify the number of samples to reserve for test set. If not specified, no separate test set will be generated."
-    echo "  --dev_rate <float>  Specify the fraction of samples to reserve for dev set. Default 0.1"
+    echo "  --dev_rate <float>  Specify the fraction of samples to reserve for dev set. Default 0.1. This is recommended over --max_dev, which is a hard cap on the number of dev samples and may bias the results."
     echo "  --max_dev <int>  Specify the maximum number of samples to reserve for dev set. If this count is lower than the dev_rate fraction, the dev set will be capped at this number."
     echo ""
 
@@ -299,6 +299,7 @@ else
     [[ $# -eq 1 ]] || die "expected exactly one positional input argument (file or list), got $#"
 fi
 
+
 build_dedup_args() {
     local out_ref="$1"
     local -a result=()
@@ -322,7 +323,7 @@ build_dedup_args() {
 build_final_file_args() {
     local out_ref="$1"
     local -a result=()
-    [[ -n "$test_set_count" ]] && result+=(-t "$test_set_count")
+    [[ -n "$test_set_count" ]] && result+=(-r "$test_set_count")
     [[ -n "$dev_rate" ]] && result+=(-p "$dev_rate")
     [[ -n "$max_dev" ]] && result+=(-m "$max_dev")
     [[ -n "$seed_val" ]] && result+=(-s "$seed_val")
@@ -432,6 +433,12 @@ elif [[ "$mode" == "batch" ]]; then
     input_path="$(cd "$(dirname "$input_arg")" && pwd)/${input_arg##*/}"
     resolve_file_list "$input_arg" fasta_list
 
+    # avoid overwrite directory if it already exists in a slurm setting
+    if [[ -e "$output_dir" ]]; then
+        date_str=$(date +%Y_%m_%d_%H.%M.%S)
+        output_dir="${output_dir}_${date_str}"
+        echo "Warning: output directory already exists. Using new directory to avoid overwrite: $output_dir"
+    fi
     [[ ${#fasta_list[@]} -gt 0 ]] || die "no input files found"
 
     build_dedup_args dedup_args
@@ -517,7 +524,6 @@ if [[ "$final_samples_out" -eq 1 ]]; then
         for subdir in "$output_dir"/*/; do
             if [[ -d "$subdir" ]]; then
                 build_final_file_args final_args
-                # exec "$FINAL_SAMPLES_SCRIPT" $subdir "${final_args[@]}"
                 "$FINAL_SAMPLES_SCRIPT" $subdir "${final_args[@]}"
             fi
         done

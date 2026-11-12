@@ -8,44 +8,67 @@
 - bedtools
 - C++17 compiler and zlib
 
+## Building
+
+```sh
+make
+```
+
+This installs the `synopsis` command to a standard writable directory on your
+`PATH` when one is available. On Apple Silicon macOS, this is normally
+`/opt/homebrew/bin`; otherwise it falls back to `~/.local/bin`.
+
+If the fallback directory is used and is not already on your `PATH`, add it to
+your shell profile:
+
+```sh
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+You can then run `synopsis` from any directory:
+
+```sh
+synopsis --help
+```
+
+For a system-wide installation, use a prefix on the system `PATH`, such as
+`/usr/local`:
+
+```sh
+make PREFIX=/usr/local
+```
+
+On macOS, the launcher uses Zsh when available because the system Bash 3.2 is
+older than the Bash 4+ required by `synopsis.sh`.
+
 ## Usage
 
 ```
-synopsis [kmer|sample-threshold] [options] <input file|list>
-synopsis individual [kmer|sample-threshold] [options] <input file|list>
-synopsis batch [kmer|sample-threshold] --config <config_file> [-y] [options] <input file|list>
-synopsis shuffle [kmer|sample-threshold] [options] <file_list> <indir>
+synopsis [kmer|sample] [options] <input file|list>
+synopsis individual [kmer|sample] [options] <input file|list>
+synopsis individual [kmer|sample] --config <config_file> [-y] [options] <input file|list>
+synopsis balanced [kmer|sample] [options] <file_list> <indir>
 ```
 
 ### Modes
 
 | Mode | Description |
 |---|---|
-| **direct** (default) | Runs deduplication once on the given input. If the input is a `.txt` list of fasta paths, it's treated as a single combined dataset. |
-| **individual** | Runs deduplication independently on each file in a list, one after another. Each file gets its own output subdirectory. |
-| **batch** | Generates a Slurm array job that runs deduplication independently on each file in a list, in parallel on a cluster. Requires `--config`. Can optionally submit the job immediately with `-y`. |
-| **shuffle** | Merges adjacent samples from a directory of previously, independently deduplicated files, shuffles them together, re-deduplicates, and generates new samples. |
+| **Direct** (default) | Runs deduplication once on the given input. If the input is a `.txt` list of fasta paths, it's treated as a single combined dataset in order. |
+| **Individual** | Runs deduplication independently on each file in a list, one after another. Each file gets its own output subdirectory. With `--config`, generates a Slurm array script instead. When --config is set, additionally setting -y will automatically submit the generated slurm script using sbatch. |
+| **Shuffle** | Merges adjacent samples from a directory of previously, independently deduplicated files, shuffles them together, re-deduplicates, and generates new samples. |
 
 ### Choosing a mode and evaluation method
 
-The first one or two arguments (before any flags) are positional:
-
-1. If the first argument is a mode word (`individual`, `batch`, `shuffle`), it's used as the mode.
-2. The next argument, if it matches a valid evaluation method (`kmer` or `sample-threshold`), is used as the evaluation method.
-3. If no evaluation method is given, it defaults to `kmer`.
-4. Whatever comes next must either be a flag (starts with `-`) or an existing input file with a recognized extension — otherwise `synopsis` exits with an error (this catches typos in a misspelled mode or eval-method word).
-
-`sample-agnostic` is no longer supported as an evaluation method.
+The evaluation method is optional and defaults to `kmer`. Use `sample` for per-sample threshold evaluation.
 
 Examples:
 
 ```sh
-synopsis myfile.fasta                      # direct mode, kmer
-synopsis sample myfile.fasta     # direct mode, sample
-synopsis individual files.txt              # individual mode, kmer
-synopsis individual sample-threshold files.txt
-synopsis batch files.txt --config cfg.conf # batch mode, kmer
-synopsis shuffle sample-threshold list.txt indir/
+Direct mode (default):   synopsis [kmer|sample] [options] <input file|list>
+Individual mode:         synopsis individual [kmer|sample] [options] <input file|list>
+Batch mode:              synopsis individual [kmer|sample] --config <config_file> [-y] [options] <input file|list>
+Balanced mode:           synopsis balanced [kmer|sample] [options] <file_list> <indir>
 ```
 
 ## Input detection
@@ -58,18 +81,18 @@ The final positional argument is inspected by extension:
 | `.fa`, `.fna`, `.fasta`, `.fa.gz`, `.fna.gz`, `.fasta.gz` | A single fasta file |
 | anything else (including `.fq`/`.fastq`) | Not supported |
 
-When a `.txt` list is given to `individual` or `batch` mode:
+When a `.txt` list is given to `individual` mode:
 
 - Blank lines are skipped.
 - Lines beginning with `#` are treated as comments and skipped.
-- Every other line is assumed to be a **full, absolute path** to a fasta file. Relative paths are not resolved against anything — use absolute paths.
+- Every other line is assumed to be a **full, absolute path** to a fasta file. 
 
 ## Output directories
 
 `-o <path>` sets the base output directory and is shared across all modes.
 
 - In **direct** mode, `-o` is used exactly as given.
-- In **individual** and **batch** modes, each fasta file gets its own subdirectory under `-o`, named after that file's basename with its extension(s) stripped (including both parts of a `.gz`-compressed double extension, e.g. `sample1.fasta.gz` → `sample1`):
+- In **individual** mode, each fasta file gets its own subdirectory under `-o`, named after that file's basename with its extension(s) stripped (including both parts of a `.gz`-compressed double extension, e.g. `sample1.fasta.gz` → `sample1`):
 
   ```
   <outdir>/<basename_without_extension>/
@@ -79,15 +102,16 @@ When a `.txt` list is given to `individual` or `batch` mode:
 
 | Flag | Description |
 |---|---|
-| `-d <float>` | dedup_param |
-| `-k <int>` | kmer |
-| `-l <int>` | sample_len |
-| `-m <int>` | min_sample_len |
-| `-o <path>` | output_dir |
-| `-p <path>` | seen_kmers |
-| `-s <int>` | save_every |
-| `-v <int>` | overlap |
-| `-r` | retain_info |
+| `-d <float>` | Deduplication retention rate. Default 0.0|
+| `-k <int>` | K-mer length |
+| `-l <int>` | Standard sample length |
+| `-m <int>` | Minimum sample length (defaults to standard sample length) |
+| `-o <path>` | Output directory |
+| `-p <path>` | Seen kmers set from previous run to resume |
+| `-s <int>` | Save seen kmer set frequency |
+| `-v <int>` | Number of overlapping bases between samples. Default is k-1. |
+| `-r` | Retain information as scanning each contig. Recommended for large sample lengths. |
+| `-f` | Generate final sample files |
 | `--save_kmers_at_end` | |
 | `--write_ambiguous_beds` | |
 | `--write_ignored_beds` | |
@@ -95,10 +119,17 @@ When a `.txt` list is given to `individual` or `batch` mode:
 | `--seed <int>` | |
 | `-h`, `--help` | Show usage |
 
+## Shared Post-processing parameters
+| Flag | Description |
+|---|---|
+| `-t <int>`  | Specify the number of samples to reserve for test set. If not specified, no separate test set will be generated | 
+| `--dev_rate <float>` | Specify the fraction of samples to reserve for dev set. Default 0.1 |
+| `--max_dev <int>` |  Specify the maximum number of samples to reserve for dev set. If this count is lower than the dev_rate fraction, the dev set will be capped at this number. |
+
 ## Shuffle mode options
 
 ```
-synopsis shuffle [kmer|sample-threshold] [options] <file_list> <indir>
+synopsis shuffle [kmer|sample] [options] <file_list> <indir>
 ```
 
 | Flag | Description |
@@ -107,15 +138,15 @@ synopsis shuffle [kmer|sample-threshold] [options] <file_list> <indir>
 | `-z` | Generate final masked bed files |
 | `-x` | Add originally ignored regions before merging |
 
-`<file_list>` and `<indir>` specify the previously, independently deduplicated files to merge, shuffle, and re-deduplicate. The evaluation method chosen (default `kmer`) governs the *inner* re-deduplication step. Nested modes are not allowed — you cannot run `synopsis shuffle individual` or `synopsis shuffle batch`.
+`<file_list>` and `<indir>` specify the previously, independently deduplicated files to merge, shuffle, and re-deduplicate. The evaluation method chosen (default `kmer`) governs the *inner* re-deduplication step. Nested modes are not allowed — you cannot run `synopsis shuffle individual`.
 
-## Batch mode
+## Batch generation via individual mode
 
 ```
-synopsis batch [kmer|sample-threshold] --config <config_file> [-y] [options] <input file|list>
+synopsis individual [kmer|sample] --config <config_file> [-y] [options] <input file|list>
 ```
 
-Batch mode resolves the input into a list of fasta files and generates a Slurm script with one array task per file. Each array task deduplicates a single assigned fasta file, writing to its own output subdirectory as described above.
+When `individual` receives `--config`, it resolves the input into a list of fasta files and generates a Slurm script with one array task per file. Each array task deduplicates a single assigned fasta file, writing to its own output subdirectory as described above. The script is written locally; it is not executed by `synopsis` unless `-y` is supplied in an environment with Slurm.
 
 ### `--config <file>` (required)
 
@@ -123,7 +154,7 @@ Points to a Slurm configuration file (see format below) describing `#SBATCH` set
 
 ### `-y`
 
-If given, after generating the Slurm script, `synopsis` additionally submits it immediately via `sbatch`. Without `-y`, the script is only written to disk — nothing is submitted.
+If given, after generating the Slurm script, `synopsis` attempts to submit it immediately via `sbatch`. Without `-y`, the script is only written to disk.
 
 ### Generated script
 
@@ -133,13 +164,13 @@ The output script is written to the **caller's current working directory** and n
 synopsis_batch_<eval_method>.sh
 ```
 
-e.g. `synopsis_batch_kmer.sh` or `synopsis_batch_sample-threshold.sh`.
+e.g. `synopsis_batch_kmer.sh` or `synopsis_batch_sample.sh`.
 
 The `--array` range is computed automatically based on the number of resolved input files. Set `max_concurrent_jobs` to a positive integer to limit how many array tasks run concurrently; it is emitted as the Slurm `%<number>` array limit.
 
 ### Slurm config file format
 
-The config file has two sections, each introduced by a literal marker line, with an optional comment line immediately below purely for visual separation:
+The config file has a Slurm settings section and an optional setup section:
 
 ```
 ###SLURM VARIABLES###
@@ -165,15 +196,25 @@ module load anaconda3
 source activate my_env
 ```
 
-**Section 1 — `###SLURM VARIABLES###`:**
+- Put Slurm options in `key="value"` form under `###SLURM VARIABLES###`.
+- Empty values are ignored.
+- `max_concurrent_jobs` limits concurrent array tasks and must be a positive integer.
+- Put optional module loads or environment setup below `###LOCAL SETUP (ENVIRONMENTS, MODULES, ETC)###`.
+- Setup text is copied into the generated script before the deduplication command.
 
-- Each line must be of the form `key="value"`.
-- `key` must be one of the recognized Slurm long-option names listed above (any other key is an error).
-- Any key left as `key=""` (empty value) is skipped — no corresponding `#SBATCH` line is generated.
-- Any key with a non-empty value generates a `#SBATCH --<key>="<value>"` line in the output script.
-- `max_concurrent_jobs` is a special key: it must be a positive integer and is appended to the computed array range as `%<number>` rather than emitted as its own `#SBATCH` option.
-- `array` is **not** a valid key here; it is always computed and injected automatically.
+# Post-processing
 
-**Section 2 — `###LOCAL SETUP (ENVIRONMENTS, MODULES, ETC)###`:**
+To generate the final sample files, the following commands will generate the same output files
 
-- Everything after this marker is copied verbatim into the generated script, and runs once per array task, before deduplication runs on that task's assigned file. You do not need to write any array-handling logic here (no need to reference `$SLURM_ARRAY_TASK_ID`, look up the input file, or build output paths) — `synopsis` generates and appends all of that automatically, immediately after this section. Use this section only for one-time-per-task setup, e.g. module loads, environment activation, exports.
+
+```sh
+<synopsis_root_dir>/code/get_samples.sh -i <deduplicated_data_dir> [-p <float>] [-m <int>] [-s <int>] [-t]
+```
+
+#### Options
+
+- `-i <deduplicated_data_dir>` — Path to the deduplicated data directory.
+- `-p <float>` — Specify the fraction of samples to reserve for dev set. Default 0.1
+- `-m <int>` —  Specify the maximum number of samples to reserve for dev set. If this count is lower than the dev_rate fraction, the dev set will be capped at this number.
+- `-s <int>` — Seed for shuffling.
+- `-t` — Disable `.txt` output.
