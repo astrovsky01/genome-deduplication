@@ -36,10 +36,10 @@ readonly SLURM_KEYS=(job-name account partition time mem cpus-per-task ntasks no
 
 usage() {
     echo "Usage:"
-    echo "  Direct mode (default):   $0 [kmer|sample] [options] <input file|list>"
-    echo "  Individual mode:         $0 individual [kmer|sample] [options] <input file|list>"
-    echo "  Batch mode:              $0 individual [kmer|sample] --config <config_file> [-y] [options] <input file|list>"
-    echo "  Balanced mode:           $0 balanced [kmer|sample] [options] <file_list> <indir>"
+    echo "  Direct mode (default):   synopsis [kmer|sample] [options] <input file|list>"
+    echo "  Individual mode:         synopsis individual [kmer|sample] [options] <input file|list>"
+    echo "  Batch mode:              synopsis individual [kmer|sample] --config <config_file> [-y] [options] <input file|list>"
+    echo "  Balanced mode:           synopsis balanced [kmer|sample] [options] <file_list> <indir>"
     echo ""
     echo "Dedup options (shared across all modes):"
     echo "  -d <float>  Duplicate retention rate. Default 0.0 (strict)"
@@ -544,7 +544,6 @@ if [[ "$final_samples_out" -eq 1 ]]; then
         build_final_file_args final_args
 
         input_dir="${output_dir:-dedup_out}"
-        echo "$FINAL_SAMPLES_SCRIPT" -i "$input_dir" "${final_args[@]}"
         "$FINAL_SAMPLES_SCRIPT" -i "$input_dir" "${final_args[@]}"
     fi
 fi

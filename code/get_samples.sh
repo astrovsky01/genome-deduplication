@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Input arg
 data_folder=$1
@@ -124,12 +125,12 @@ for sample_bed in $sample_beds; do
     # test_sample_bed="${data_folder}/${basename}.samples.test.bed"
 
     echo "Partitioning samples"
-    ./code/partition_samples.sh "$sample_bed" "$dev_pct" "$max_dev_samples" "$shuf_seed" "$test_pct"
+    "$SCRIPT_DIR/partition_samples.sh" "$sample_bed" "$dev_pct" "$max_dev_samples" "$shuf_seed" "$test_pct"
 done
 if [ "$no_txt" = false ]; then
     echo "Finished partitioning samples into train/dev sets. Aggregating and retrieving sequences now"
-    ./code/aggregate_and_track_samples.sh $data_folder $shuf_seed $test_pct
+    "$SCRIPT_DIR/aggregate_and_track_samples.sh" "$data_folder" "$shuf_seed" "$test_pct"
 else
     echo "Finished paritioning samples into train/dev sets. Aggregating and shuffling bed files."
-    ./code/aggregate_and_track_samples.sh $data_folder $shuf_seed $test_pct true
+    "$SCRIPT_DIR/aggregate_and_track_samples.sh" "$data_folder" "$shuf_seed" "$test_pct" true
 fi

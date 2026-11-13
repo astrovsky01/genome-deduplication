@@ -1,4 +1,6 @@
-# #!/usr/bin/env bash
+#!/usr/bin/env bash
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 ignored=false
 masks=false
@@ -173,7 +175,7 @@ fi
 outdir="$indir/final_files"
 combined_file_name="combined_deduped_samples.fasta"
 CURRENT_DEDUP_COMMAND="dedup6"
-ROOTDIR="$(pwd)"
+ROOTDIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 
 if [ -z "$file_list" ] || [ -z "$indir" ]; then

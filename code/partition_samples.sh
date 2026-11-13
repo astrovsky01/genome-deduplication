@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # Usage: ./code/partition_samples.sh [X.samples.bed] [dev set %] [max dev set count] [random seed] [test set %]
 # e.g.:  ./code/partition_samples.sh human.samples.bed 0.1 100000 123 0.1
 # Produces output dev and train bed files. If test set percentage is greater than zero, also produces a test bed file.
@@ -32,7 +34,7 @@ fi
 file_basename="${sample_bed%.samples.bed}"
 # Shuffle file to temporary file
 shuf_file=${file_basename}.shuf.samples.bed
-python code/shuffle.py $sample_bed $random_seed $shuf_file
+python "$SCRIPT_DIR/shuffle.py" "$sample_bed" "$random_seed" "$shuf_file"
 #shuf $sample_bed > $shuf_file
 
 # Partition shuffled sample file
