@@ -14,9 +14,8 @@
 make
 ```
 
-This installs the `synopsis` command to a standard writable directory on your
-`PATH` when one is available. On Apple Silicon macOS, this is normally
-`/opt/homebrew/bin`; otherwise it falls back to `~/.local/bin`.
+This installs the `synopsis` command to `~/.local/bin` by default. To install
+to another prefix, set `PREFIX` explicitly.
 
 If the fallback directory is used and is not already on your `PATH`, add it to
 your shell profile:
@@ -37,6 +36,32 @@ For a system-wide installation, use a prefix on the system `PATH`, such as
 ```sh
 make PREFIX=/usr/local
 ```
+
+## Bioconda package
+
+The [`conda.recipe/`](conda.recipe/) directory is intended to be submitted as
+`recipes/synopsis/` in the
+[Bioconda recipes repository](https://github.com/bioconda/bioconda-recipes),
+not published as a standalone Conda channel.
+
+Before submitting, the upstream repository needs:
+
+- A tagged release matching the recipe version.
+- The committed MIT `LICENSE` file included in this repository.
+
+After creating the release and updating `git_rev` and `version`, copy the
+recipe into a checkout of `bioconda-recipes` and validate it with the Bioconda
+tooling:
+
+```sh
+cp -R conda.recipe /path/to/bioconda-recipes/recipes/synopsis
+cd /path/to/bioconda-recipes
+bioconda-utils lint --packages synopsis recipes config.yml
+bioconda-utils build --packages synopsis --docker recipes config.yml
+```
+
+The recipe targets Linux and macOS. Windows is explicitly skipped because the
+suite depends on Bash and Unix command-line utilities.
 
 On macOS, the launcher uses Zsh when available because the system Bash 3.2 is
 older than the Bash 4+ required by `synopsis.sh`.
